@@ -1926,7 +1926,7 @@ static int msm_lsm_check_event_type(struct lsm_client *lsm_client,
 struct snd_lsm_event_status32 {
 	u16 status;
 	u16 payload_size;
-	u8 payload[0];
+	u8 payload[];
 };
 
 struct snd_lsm_event_status_v3_32 {
@@ -1934,7 +1934,7 @@ struct snd_lsm_event_status_v3_32 {
 	u32 timestamp_msw;
 	u16 status;
 	u16 payload_size;
-	u8 payload[0];
+	u8 payload[];
 };
 
 struct snd_lsm_sound_model_v2_32 {
