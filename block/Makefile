@@ -29,6 +29,9 @@ obj-$(CONFIG_MQ_IOSCHED_ADIOS)	+= adios.o
 CFLAGS_adios.o := -Wno-gcc-compat -Wno-declaration-after-statement
 bfq-y				:= bfq-iosched.o bfq-wf2q.o bfq-cgroup.o
 obj-$(CONFIG_IOSCHED_BFQ)	+= bfq.o
+ssg-$(CONFIG_MQ_IOSCHED_SSG)	:= ssg-iosched.o
+ssg-$(CONFIG_MQ_IOSCHED_SSG_CGROUP)	+= ssg-cgroup.o
+obj-$(CONFIG_MQ_IOSCHED_SSG)	+= ssg.o
 
 obj-$(CONFIG_BLOCK_COMPAT)	+= compat_ioctl.o
 obj-$(CONFIG_BLK_CMDLINE_PARSER)	+= cmdline-parser.o
