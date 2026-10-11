@@ -226,6 +226,18 @@ static void wma_injection_retry_work(struct work_struct *work);
 static void wma_injection_helper_idle_work(struct work_struct *work);
 static void wma_injection_reaper(struct work_struct *work);
 
+/*
+ * The reaper only has something to do while a frame is in flight or the
+ * helper holds resources. It stops itself when neither is true, so every
+ * path that can make one of them true starts it again here.
+ */
+static void wma_injection_arm_reaper(void)
+{
+	if (READ_ONCE(wma_injection_ctx.initialized) &&
+	    READ_ONCE(wma_injection_ctx.state) != WMA_INJECTION_STOPPING)
+		schedule_delayed_work(&wma_injection_ctx.reaper, HZ);
+}
+
 static bool
 wma_injection_accepts_frames(enum wma_injection_state state)
 {
@@ -695,6 +707,7 @@ wma_injection_restart_helper(tp_wma_handle wma, ol_txrx_soc_handle soc,
 	bool restart = helper->wmi_started;
 	QDF_STATUS status;
 
+	wma_injection_arm_reaper();
 	status = wma_injection_start_helper(wma, helper, start, restart);
 	if (QDF_IS_STATUS_ERROR(status))
 		goto fail;
@@ -734,6 +747,7 @@ __wma_injection_ensure_helper(tp_wma_handle wma, u8 monitor_vdev_id,
 	QDF_STATUS peer_authorize_status;
 	QDF_STATUS fw_authorize_status;
 
+	wma_injection_arm_reaper();
 	if (wma_injection_helper_is_ready(helper, monitor_vdev_id, chanfreq)) {
 		wma_injection_publish_helper(helper);
 		return QDF_STATUS_SUCCESS;
@@ -1474,11 +1488,14 @@ static void wma_injection_reaper(struct work_struct *work)
 {
 	struct wma_injection_slot *slot;
 	bool timed_out = false;
+	bool busy = false;
 	int i;
 
 	for (i = 0; i < WMA_INJECTION_SLOT_COUNT; i++) {
 		slot = &wma_injection_ctx.slots[i];
 		spin_lock_bh(&wma_injection_ctx.lock);
+		if (slot->nbuf)
+			busy = true;
 		if (!slot->nbuf || slot->timeout_reported ||
 		    !time_after(jiffies, slot->submitted + WMA_INJECTION_TIMEOUT)) {
 			spin_unlock_bh(&wma_injection_ctx.lock);
@@ -1495,9 +1512,9 @@ static void wma_injection_reaper(struct work_struct *work)
 	if (timed_out || (!READ_ONCE(wma_injection_ctx.helper.created) &&
 			  wma_injection_helper_has_resources()))
 		wma_injection_recover_timed_out_helper();
-	if (READ_ONCE(wma_injection_ctx.initialized) &&
-	    READ_ONCE(wma_injection_ctx.state) != WMA_INJECTION_STOPPING)
-		schedule_delayed_work(&wma_injection_ctx.reaper, HZ);
+	/* Nothing in flight and no helper: stop until the next frame or setup. */
+	if (busy || wma_injection_helper_has_resources())
+		wma_injection_arm_reaper();
 }
 
 QDF_STATUS wma_injection_tx(qdf_nbuf_t nbuf, u8 monitor_vdev_id)
@@ -1514,6 +1531,7 @@ QDF_STATUS wma_injection_tx(qdf_nbuf_t nbuf, u8 monitor_vdev_id)
 		return QDF_STATUS_E_AGAIN;
 	if (!nbuf || !qdf_nbuf_len(nbuf))
 		return QDF_STATUS_E_INVAL;
+	wma_injection_arm_reaper();
 	route = wma_injection_select_route(nbuf);
 	pending = route == WMA_INJECTION_ROUTE_DP ?
 		  &wma_injection_ctx.pending_dp :
