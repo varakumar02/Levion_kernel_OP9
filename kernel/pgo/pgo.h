@@ -43,7 +43,9 @@
 		 (u64)'R' << 8  |	\
 		 (u64)129)
 
-#if __clang_major__ >= 14
+#if __clang_major__ >= 19
+#define LLVM_INSTR_PROF_RAW_VERSION		10
+#elif __clang_major__ >= 14
 #define LLVM_INSTR_PROF_RAW_VERSION		8
 #elif __clang_major__ == 13
 #define LLVM_INSTR_PROF_RAW_VERSION		7
@@ -53,7 +55,12 @@
 
 #define LLVM_INSTR_PROF_DATA_ALIGNMENT		8
 #define LLVM_INSTR_PROF_IPVK_FIRST		0
+/* Version 10 adds IPVK_VTableTarget; C code never has such sites. */
+#if LLVM_INSTR_PROF_RAW_VERSION >= 10
+#define LLVM_INSTR_PROF_IPVK_LAST		2
+#else
 #define LLVM_INSTR_PROF_IPVK_LAST		1
+#endif
 #define LLVM_INSTR_PROF_MAX_NUM_VAL_PER_SITE	255
 
 #define LLVM_VARIANT_MASK_IR_PROF	(0x1ULL << 56)
@@ -70,10 +77,15 @@
  *   counters.
  * @padding_bytes_after_counters: the number of padding bytes after the
  *   counters.
+ * @num_bitmap_bytes: size of the bitmap section (MC/DC coverage), always 0.
+ * @padding_bytes_after_bitmap_bytes: padding after the bitmap section.
  * @names_size: the size in bytes of the LLVM profile section containing the
  *   counters' names.
  * @counters_delta: the beginning of the LLMV profile counters section.
+ * @bitmap_delta: the beginning of the bitmap section, always 0.
  * @names_delta: the beginning of the LLMV profile names section.
+ * @num_vtables: number of vtable records, always 0.
+ * @vnames_size: size of the vtable names, always 0.
  * @value_kind_last: the last profile value kind.
  */
 struct llvm_prf_header {
@@ -86,9 +98,20 @@ struct llvm_prf_header {
 	u64 padding_bytes_before_counters;
 	u64 counters_size;
 	u64 padding_bytes_after_counters;
+#if LLVM_INSTR_PROF_RAW_VERSION >= 10
+	u64 num_bitmap_bytes;
+	u64 padding_bytes_after_bitmap_bytes;
+#endif
 	u64 names_size;
 	u64 counters_delta;
+#if LLVM_INSTR_PROF_RAW_VERSION >= 10
+	u64 bitmap_delta;
+#endif
 	u64 names_delta;
+#if LLVM_INSTR_PROF_RAW_VERSION >= 10
+	u64 num_vtables;
+	u64 vnames_size;
+#endif
 	u64 value_kind_last;
 };
 
@@ -97,19 +120,27 @@ struct llvm_prf_header {
  * @name_ref: the reference to the function's name.
  * @func_hash: the hash value of the function.
  * @counter_ptr: a pointer to the profile counter.
+ * @bitmap_ptr: a pointer to the coverage bitmap, unused.
  * @function_ptr: a pointer to the function.
  * @values: the profiling values associated with this function.
  * @num_counters: the number of counters in the function.
  * @num_value_sites: the number of value profile sites.
+ * @num_bitmap_bytes: the size of the coverage bitmap, unused.
  */
 struct llvm_prf_data {
 	const u64 name_ref;
 	const u64 func_hash;
 	const void *counter_ptr;
+#if LLVM_INSTR_PROF_RAW_VERSION >= 10
+	const void *bitmap_ptr;
+#endif
 	const void *function_ptr;
 	void *values;
 	const u32 num_counters;
 	const u16 num_value_sites[LLVM_INSTR_PROF_IPVK_LAST + 1];
+#if LLVM_INSTR_PROF_RAW_VERSION >= 10
+	const u32 num_bitmap_bytes;
+#endif
 } __aligned(LLVM_INSTR_PROF_DATA_ALIGNMENT);
 
 /**
