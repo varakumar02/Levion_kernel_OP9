@@ -304,7 +304,7 @@ retry:
 		 * required to enforce the VM_MAYWRITE check done at
 		 * uffd registration time.
 		 */
-		if (!dst_vma->vm_userfaultfd_ctx.ctx)
+		if (!rcu_access_pointer(dst_vma->vm_userfaultfd_ctx.ctx))
 			goto out_unlock;
 
 		if (dst_start < dst_vma->vm_start ||
@@ -566,7 +566,7 @@ retry:
 	 * enforce the VM_MAYWRITE check done at uffd registration
 	 * time.
 	 */
-	if (!dst_vma->vm_userfaultfd_ctx.ctx)
+	if (!rcu_access_pointer(dst_vma->vm_userfaultfd_ctx.ctx))
 		goto out_unlock;
 
 	if (dst_start < dst_vma->vm_start ||
