@@ -2923,10 +2923,21 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+bool filemap_allow_speculation(void)
+{
+	return true;
+}
+EXPORT_SYMBOL_GPL(filemap_allow_speculation);
+#endif
+
 const struct vm_operations_struct generic_file_vm_ops = {
 	.fault		= filemap_fault,
 	.map_pages	= filemap_map_pages,
 	.page_mkwrite	= filemap_page_mkwrite,
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+	.allow_speculation = filemap_allow_speculation,
+#endif
 };
 
 /* This is used for a general mmap of a disk file */

@@ -280,6 +280,12 @@
 			on: enable for both 32- and 64-bit processes
 			off: disable for both 32- and 64-bit processes
 
+	allow_file_spec_access
+			Allow speculative faults on file backed pages.
+			Speculative faults are enabled only for those vm_ops
+			that implement and return true for allow_speculation
+			callback.
+
 	alloc_snapshot	[FTRACE]
 			Allocate the ftrace snapshot buffer on boot up when the
 			main buffer is allocated. This is handy if debugging

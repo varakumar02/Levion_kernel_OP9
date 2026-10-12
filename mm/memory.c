@@ -2332,6 +2332,54 @@ out:
 	local_irq_enable();
 	return ret;
 }
+
+static bool __read_mostly allow_file_spec_access;
+static int __init allow_file_spec_access_setup(char *str)
+{
+	allow_file_spec_access = true;
+	return 1;
+}
+__setup("allow_file_spec_access", allow_file_spec_access_setup);
+
+static bool vmf_allows_speculation(struct vm_fault *vmf)
+{
+	if (vma_is_anonymous(vmf->vma)) {
+		/*
+		 * __anon_vma_prepare() requires the mmap_sem to be held
+		 * because vm_next and vm_prev must be safe. This can't be
+		 * guaranteed in the speculative path.
+		 */
+		if (!vmf->vma->anon_vma)
+			return false;
+		return true;
+	}
+
+	if (!allow_file_spec_access) {
+		/*
+		 * Can't call vm_ops service has we don't know what they would
+		 * do with the VMA.
+		 * This include huge page from hugetlbfs.
+		 */
+		return false;
+	}
+
+	if (!(vmf->vma->vm_flags & VM_SHARED) &&
+		(vmf->flags & FAULT_FLAG_WRITE) &&
+		!vmf->vma->anon_vma) {
+		/*
+		 * non-anonymous private COW without anon_vma.
+		 * See above.
+		 */
+		return false;
+	}
+
+	if (vmf->vma->vm_ops->allow_speculation &&
+		vmf->vma->vm_ops->allow_speculation()) {
+		return true;
+	}
+
+	return false;
+}
 #else
 static inline bool pte_spinlock(struct vm_fault *vmf)
 {
@@ -2345,6 +2393,11 @@ static inline bool pte_map_lock(struct vm_fault *vmf)
 	vmf->pte = pte_offset_map_lock(vmf->vma->vm_mm, vmf->pmd,
 				       vmf->address, &vmf->ptl);
 	return true;
+}
+
+static inline bool vmf_allows_speculation(struct vm_fault *vmf)
+{
+	return false;
 }
 #endif /* CONFIG_SPECULATIVE_PAGE_FAULT */
 
@@ -4302,6 +4355,9 @@ skip_pmd_checks:
 	if (!vmf->pte) {
 		if (vma_is_anonymous(vmf->vma))
 			return do_anonymous_page(vmf);
+		else if ((vmf->flags & FAULT_FLAG_SPECULATIVE) &&
+				!vmf_allows_speculation(vmf))
+			return VM_FAULT_RETRY;
 		else
 			return do_fault(vmf);
 	}
@@ -4504,16 +4560,8 @@ int __handle_speculative_fault(struct mm_struct *mm, unsigned long address,
 	if (seq & 1)
 		return VM_FAULT_RETRY;
 
-	/*
-	 * __anon_vma_prepare() requires the mmap_sem to be held
-	 * because vm_next and vm_prev must be safe. This can't be guaranteed
-	 * in the speculative path.
-	 */
-	if (unlikely((vma_is_anonymous(vmf.vma) && !vmf.vma->anon_vma) ||
-		(!vma_is_anonymous(vmf.vma) &&
-			!(vmf.vma->vm_flags & VM_SHARED) &&
-			(flags & FAULT_FLAG_WRITE) &&
-			!vmf.vma->anon_vma)))
+	vmf.flags = flags;
+	if (!vmf_allows_speculation(&vmf))
 		return VM_FAULT_RETRY;
 
 	vmf.vma_flags = READ_ONCE(vmf.vma->vm_flags);
