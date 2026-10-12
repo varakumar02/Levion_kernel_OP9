@@ -125,12 +125,13 @@ endif
 
 #
 # Enable clang's PGO profiling flags for a file or directory depending on
-# variables PGO_PROFILE_obj.o and PGO_PROFILE.
+# variables PGO_PROFILE_obj.o and PGO_PROFILE. Modules are never
+# instrumented: kernel/pgo only serializes the vmlinux sections.
 #
 ifeq ($(CONFIG_PGO_CLANG),y)
-_c_flags += $(if $(patsubst n%,, \
+_c_flags += $(if $(part-of-module),, $(if $(patsubst n%,, \
 		$(PGO_PROFILE_$(basetarget).o)$(PGO_PROFILE)y), \
-		$(CFLAGS_PGO_CLANG))
+		$(CFLAGS_PGO_CLANG)))
 endif
 
 #
