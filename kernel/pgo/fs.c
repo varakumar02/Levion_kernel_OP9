@@ -339,11 +339,11 @@ static int prf_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static const struct proc_ops prf_pops = {
-	.proc_open		= prf_open,
-	.proc_read		= prf_read,
-	.proc_lseek		= default_llseek,
-	.proc_release	= prf_release
+static const struct file_operations prf_fops = {
+	.open		= prf_open,
+	.read		= prf_read,
+	.llseek		= default_llseek,
+	.release	= prf_release
 };
 
 
@@ -382,9 +382,9 @@ static ssize_t reset_write(struct file *file, const char __user *addr,
 	return len;
 }
 
-static const struct proc_ops prf_reset_pops = {
-	.proc_write		= reset_write,
-	.proc_lseek		= noop_llseek,
+static const struct file_operations prf_reset_fops = {
+	.write		= reset_write,
+	.llseek		= noop_llseek,
 };
 
 
@@ -396,11 +396,11 @@ static int __init pgo_init(void)
 		goto err_remove;
 
 	if (!proc_create("vmlinux.profraw", 0600, directory,
-				 &prf_pops))
+				 &prf_fops))
 		goto err_remove;
 
 	if (!proc_create("reset", 0200, directory,
-				 &prf_reset_pops))
+				 &prf_reset_fops))
 		goto err_remove;
 
 	return 0;
