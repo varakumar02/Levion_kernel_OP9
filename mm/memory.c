@@ -4573,6 +4573,7 @@ vm_fault_t __handle_speculative_fault(struct mm_struct *mm,
 	vmf.flags = flags;
 	vmf.vma_flags = READ_ONCE(vmf.vma->vm_flags);
 	vmf.vma_page_prot = READ_ONCE(vmf.vma->vm_page_prot);
+	vmf.sequence = seq;
 
 #ifdef CONFIG_USERFAULTFD
 	/*
@@ -4582,7 +4583,7 @@ vm_fault_t __handle_speculative_fault(struct mm_struct *mm,
 	if (unlikely(vmf.vma_flags & __VM_UFFD_FLAGS)) {
 		uffd_missing_sigbus = vma_is_anonymous(vmf.vma) &&
 					(vmf.vma_flags & VM_UFFD_MISSING) &&
-					userfaultfd_using_sigbus(vmf.vma);
+					userfaultfd_using_sigbus(&vmf);
 		if (!uffd_missing_sigbus)
 			return VM_FAULT_RETRY;
 		/* Not having anon_vma implies that the PTE is missing */
@@ -4704,7 +4705,6 @@ vm_fault_t __handle_speculative_fault(struct mm_struct *mm,
 
 	vmf.pgoff = linear_page_index(vmf.vma, address);
 	vmf.gfp_mask = __get_fault_gfp_mask(vmf.vma);
-	vmf.sequence = seq;
 	vmf.flags = flags;
 
 	local_irq_enable();
