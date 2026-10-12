@@ -9,7 +9,6 @@ config PGO_CLANG
 	depends on PROC_FS
 	depends on ARCH_SUPPORTS_PGO_CLANG
 	depends on CC_IS_CLANG
-	depends on !ARCH_WANTS_NO_INSTR || CC_HAS_NO_PROFILE_FN_ATTR
 	help
 	  This option enables clang's PGO (Profile Guided Optimization) based
 	  code profiling to better optimize the kernel.
