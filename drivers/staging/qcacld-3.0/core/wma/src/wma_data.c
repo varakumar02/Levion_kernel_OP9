@@ -1431,7 +1431,8 @@ static void wma_injection_refill(void)
 					    monitor_vdev_id, route);
 		if (QDF_IS_STATUS_SUCCESS(status))
 			continue;
-		if (status != QDF_STATUS_E_AGAIN) {
+		if (status != QDF_STATUS_E_AGAIN &&
+		    status != QDF_STATUS_E_BUSY) {
 			wma_err_rl("Injection send failed: status=%d vdev=%u",
 				   status, monitor_vdev_id);
 			qdf_nbuf_free(nbuf);
