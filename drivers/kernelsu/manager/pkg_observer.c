@@ -49,8 +49,10 @@ static KSU_DECL_FSNOTIFY_OPS(ksu_handle_inode_event)
 	 */
 	if (ksu_fname_len(file_name) == 13 &&
 	    !memcmp(ksu_fname_arg(file_name), "packages.list", 13)) {
-		pr_info("packages.list detected: %d\n", mask);
-		schedule_work(&ksu_track_throne_work);
+		if (mask & (FS_CREATE | FS_MOVED_TO)) {
+			pr_info("packages.list detected: %d\n", mask);
+			schedule_work(&ksu_track_throne_work);
+		}
 	}
 	/* Only /data/adb has a "ksud"; keep sucompat's view of it current. */
 	if (ksu_fname_len(file_name) == 4 &&
