@@ -1250,7 +1250,8 @@ static void wma_injection_recover_timed_out_helper(void)
 	mutex_lock(&wma_injection_ctx.lifecycle_lock);
 	spin_lock_irqsave(&wma_injection_ctx.lock, flags);
 	if (wma_injection_ctx.state == WMA_INJECTION_STOPPING ||
-	    !wma_injection_helper_has_resources()) {
+	    (!wma_injection_helper_has_resources() &&
+	     !wma_injection_ctx.in_flight)) {
 		spin_unlock_irqrestore(&wma_injection_ctx.lock, flags);
 		mutex_unlock(&wma_injection_ctx.lifecycle_lock);
 		return;
@@ -1264,6 +1265,16 @@ static void wma_injection_recover_timed_out_helper(void)
 
 	mutex_lock(&wma_injection_ctx.helper_lock);
 	if (!wma_injection_helper_has_resources()) {
+		/*
+		 * Helper already torn down (e.g. idle teardown) but slots are
+		 * still in flight because their completions never came. Reclaim
+		 * them directly so in_flight drops to 0 and the queues drain.
+		 * Safe here: the state is RECOVERING and the worker and refill
+		 * have been drained above, and a late completion bails on the
+		 * zeroed slot.
+		 */
+		wma_injection_reclaim_slots(wma_injection_ctx.wma);
+		recovered = true;
 		mutex_unlock(&wma_injection_ctx.helper_lock);
 		goto resume;
 	}
@@ -1488,30 +1499,40 @@ static void wma_injection_helper_idle_work(struct work_struct *work)
 static void wma_injection_reaper(struct work_struct *work)
 {
 	struct wma_injection_slot *slot;
-	bool timed_out = false;
+	bool stale = false;
 	bool busy = false;
 	int i;
 
 	for (i = 0; i < WMA_INJECTION_SLOT_COUNT; i++) {
 		slot = &wma_injection_ctx.slots[i];
 		spin_lock_bh(&wma_injection_ctx.lock);
-		if (slot->nbuf)
-			busy = true;
-		if (!slot->nbuf || slot->timeout_reported ||
-		    !time_after(jiffies, slot->submitted + WMA_INJECTION_TIMEOUT)) {
+		if (!slot->nbuf) {
 			spin_unlock_bh(&wma_injection_ctx.lock);
 			continue;
 		}
-		slot->timeout_reported = true;
-		timed_out = true;
-		wma_warn("%s injection completion timed out: desc=%u fc=0x%02x",
-			 slot->route == WMA_INJECTION_ROUTE_DP ? "Direct" : "WMI",
-			 slot->desc_id,
-			 slot->frame_control);
+		busy = true;
+		if (time_after(jiffies, slot->submitted + WMA_INJECTION_TIMEOUT)) {
+			stale = true;
+			if (!slot->timeout_reported) {
+				slot->timeout_reported = true;
+				wma_warn("%s injection completion timed out: desc=%u fc=0x%02x",
+					 slot->route == WMA_INJECTION_ROUTE_DP ?
+					 "Direct" : "WMI",
+					 slot->desc_id,
+					 slot->frame_control);
+			}
+		}
 		spin_unlock_bh(&wma_injection_ctx.lock);
 	}
-	if (timed_out || (!READ_ONCE(wma_injection_ctx.helper.created) &&
-			  wma_injection_helper_has_resources()))
+	/*
+	 * Trigger recovery while any slot is still past its timeout, not only
+	 * on the pass that first reports it. A frame whose completion never
+	 * arrives holds its slot (and in_flight) indefinitely otherwise, and
+	 * with WMA_INJECTION_INFLIGHT_LIMIT == 1 a single stranded WMI slot
+	 * blocks the whole queue until an unrelated channel change reclaims it.
+	 */
+	if (stale || (!READ_ONCE(wma_injection_ctx.helper.created) &&
+		      wma_injection_helper_has_resources()))
 		wma_injection_recover_timed_out_helper();
 	/* Nothing in flight and no helper: stop until the next frame or setup. */
 	if (busy || wma_injection_helper_has_resources())
