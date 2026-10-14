@@ -170,7 +170,7 @@ static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
 	if (!ksu_is_allow_uid_for_current(current_uid().val))
 		goto do_orig_execve;
 
-	addr = untagged_addr((unsigned long)*filename_user);
+	addr = untagged_addr((unsigned long)READ_ONCE(*filename_user));
 	fn = (const char __user *)addr;
 	memset(path, 0, sizeof(path));
 
@@ -251,6 +251,8 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 	struct filename *filename;
 	const char su[] = SU_PATH;
 	static const char ksud_path[] = KSUD_PATH;
+	struct ksu_sulog_pending_event *pending_root = NULL;
+	const char *const *sucompat_argv = (const char *const *)__never_use_argv;
 
 	if (unlikely(!filename_ptr))
 		return 0;
@@ -269,9 +271,13 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 		return 0;
 
 	pr_info("do_execveat_common su found\n");
+
+	pending_root = ksu_sulog_capture_root_execve_kern(filename->name, sucompat_argv, GFP_KERNEL);
+
 	memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
 
 	escape_with_root_profile();
+	ksu_sulog_emit_pending(pending_root, 0, GFP_KERNEL);
 
 	return 0;
 }
