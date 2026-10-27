@@ -7,6 +7,9 @@
 #include <linux/rculist.h>
 #include <linux/version.h>
 #include <linux/workqueue.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif // #ifdef CONFIG_KSU_SUSFS
 #include "klog.h" // IWYU pragma: keep
 #include "throne_tracker.h"
 #include "runtime/ksud_boot.h"
@@ -26,6 +29,10 @@ static struct fsnotify_group *g;
 
 static void ksu_track_throne_fn(struct work_struct *work)
 {
+#ifdef CONFIG_KSU_SUSFS
+	// Renew the getpriority uid bitmap filter
+	susfs_parse_priority_app_strings();
+#endif // #ifdef CONFIG_KSU_SUSFS
 	track_throne(false);
 }
 static DECLARE_WORK(ksu_track_throne_work, ksu_track_throne_fn);
