@@ -22,10 +22,17 @@ static int sulog_feature_get(u64 *value)
 
 static int sulog_feature_set(u64 value)
 {
-    bool enable = value != 0;
-
-    ksu_sulog_enabled = enable;
-    pr_info("sulog: set to %d\n", enable);
+    /*
+     * sulog capture faults on this 5.4 tree: ksu_sulog_capture() dereferences
+     * the execve filename/argv user pointers from inside
+     * ksu_handle_execveat_sucompat() and takes a translation fault, panicking
+     * the kernel (reboot loop once the manager enables the feature). Keep it
+     * force-disabled so the manager cannot turn it on; root grant/modules are
+     * unaffected, only su-event logging is lost.
+     */
+    (void)value;
+    ksu_sulog_enabled = false;
+    pr_info("sulog: force-disabled on this kernel (capture faults, see commit)\n");
     return 0;
 }
 
