@@ -9,7 +9,10 @@
 #include <linux/slab.h>
 #include <linux/sizes.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0) && \
+	LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0) && !defined(CONFIG_IS_HW_HISI)
 #include <linux/flex_array.h>
+#endif
 
 #include "sepolicy.h"
 #include "klog.h" // IWYU pragma: keep
