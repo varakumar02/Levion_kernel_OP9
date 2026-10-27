@@ -112,8 +112,9 @@ LPATH := /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin
 MDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 KSU_GIT_VERSION := 3027
-KSU_GIT_TAG := v3.4.0-legacy
+KSU_GIT_TAG := v3.4.2-legacy
 KSU_GIT_VERSION_VALID := 1
+KSU_VERSION_OVERRIDE := 33355
 
 # Calculate version if git version is available
 ifdef KSU_GIT_VERSION_VALID
