@@ -403,6 +403,10 @@ static int __init pgo_init(void)
 				 &prf_reset_fops))
 		goto err_remove;
 
+	pr_info("data %lu, counters %lu, names %lu, value nodes %lu bytes\n",
+		prf_data_size(), prf_cnts_size(), prf_names_size(),
+		prf_vnds_size());
+
 	return 0;
 
 err_remove:
