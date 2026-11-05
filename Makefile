@@ -776,7 +776,9 @@ endif # KBUILD_EXTMOD
 # Defaults to vmlinux, but the arch makefile usually adds further targets
 all: vmlinux
 
-CFLAGS_PGO_CLANG := -fprofile-generate
+# Block and branch counts only: value profiling (indirect-call targets, memop
+# sizes) takes pgo_lock from instrumented code and is turned off.
+CFLAGS_PGO_CLANG := -fprofile-generate -mllvm -disable-vp=true
 export CFLAGS_PGO_CLANG
 
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage \
