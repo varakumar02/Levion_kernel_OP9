@@ -33,6 +33,7 @@
  */
 static DEFINE_SPINLOCK(pgo_lock);
 static int current_node;
+static bool vnds_exhausted;
 
 unsigned long prf_lock(void)
 {
@@ -66,8 +67,11 @@ static struct llvm_prf_value_node *allocate_node(struct llvm_prf_data *p,
 		__llvm_prf_data_end, p, sizeof(*p)))
 		return NULL;
 
-	if (WARN_ON_ONCE(current_node >= max_vnds))
+	/* No printk here: pgo_lock is held, the caller reports it after unlocking */
+	if (current_node >= max_vnds) {
+		vnds_exhausted = true;
 		return NULL; /* Out of nodes */
+	}
 
 	/* reserve vnode for vmlinux */
 	return &__llvm_prf_vnds_start[current_node++];
@@ -138,6 +142,9 @@ void __llvm_profile_instrument_target(u64 target_value, void *data, u32 index)
 
 out:
 	prf_unlock(flags);
+
+	if (!curr && READ_ONCE(vnds_exhausted))
+		pr_warn_once("pgo: out of value profiling nodes, new values are dropped\n");
 }
 EXPORT_SYMBOL(__llvm_profile_instrument_target);
 
