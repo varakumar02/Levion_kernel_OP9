@@ -422,8 +422,6 @@ void __init ksu_supercalls_init(void)
 }
 
 void __exit ksu_supercalls_exit(void){
-	struct mount_entry *entry, *tmp;
-
 #ifdef KSU_KPROBES_HOOK
 	unregister_kprobe(&reboot_kp);
 #endif
