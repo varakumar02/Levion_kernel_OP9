@@ -128,6 +128,17 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 	strscpy(new_list->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
 	INIT_LIST_HEAD(&new_list->list);
 	mutex_lock(&susfs_mutex_lock_sus_path);
+	{
+		struct st_susfs_sus_path_list *cursor;
+		list_for_each_entry(cursor, &LH_SUS_PATH_LOOP, list) {
+			if (!strcmp(cursor->target_pathname, new_list->target_pathname)) {
+				mutex_unlock(&susfs_mutex_lock_sus_path);
+				kfree(new_list);
+				info.err = 0;
+				goto out_copy_to_user;
+			}
+		}
+	}
 	list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
 	mutex_unlock(&susfs_mutex_lock_sus_path);
 	SUSFS_LOGI("target_pathname: '%s', is successfully added to LH_SUS_PATH_LOOP\n", new_list->target_pathname);
