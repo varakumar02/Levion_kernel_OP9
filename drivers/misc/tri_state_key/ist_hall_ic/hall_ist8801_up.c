@@ -931,6 +931,7 @@ static int ist8801_parse_dts(struct device *dev, struct ist8801_data_t *p_data)
 
 	p_data->pctrl = devm_pinctrl_get(&p_data->client->dev);
 	if (IS_ERR_OR_NULL(p_data->pctrl)) {
+		rc = PTR_ERR(p_data->pctrl);
 		TRI_KEY_ERR("failed to get pinctrl\n");
 		goto err;
 	}
