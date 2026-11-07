@@ -917,12 +917,14 @@ static int ist8801_parse_dts(struct device *dev, struct ist8801_data_t *p_data)
 
 	p_data->power_2v8 = regulator_get(&p_data->client->dev, "vdd");
 	if (IS_ERR_OR_NULL(p_data->power_2v8)) {
+		rc = PTR_ERR(p_data->power_2v8);
 		TRI_KEY_ERR("Regulator get failed vdd_2v8\n");
 		goto err;
 	}
 
 	p_data->power_1v8 = regulator_get(&p_data->client->dev, "vio");
 	if (IS_ERR_OR_NULL(p_data->power_1v8)) {
+		rc = PTR_ERR(p_data->power_1v8);
 		TRI_KEY_ERR("Regulator get failed vcc_1v8\n");
 		goto err;
 	}
@@ -1006,8 +1008,12 @@ static int ist8801_i2c_probe(struct i2c_client *client,
 	hall_dev->dev = &client->dev;
 	if (client->dev.of_node) {
 		err = ist8801_parse_dts(&client->dev, p_data);
-		if (err)
+		if (err) {
 			TRI_KEY_ERR("failed to parse device tree\n");
+			devm_kfree(&client->dev, p_data);
+			kfree(hall_dev);
+			return err;
+		}
 	}
 	ist8801_reconfig(p_data);
 
