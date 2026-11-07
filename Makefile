@@ -781,6 +781,14 @@ all: vmlinux
 CFLAGS_PGO_CLANG := -fprofile-generate -mllvm -disable-vp=true
 export CFLAGS_PGO_CLANG
 
+# Functions with no profile, or changed since it was taken, are compiled
+# as if there were none; that is expected, so don't warn about it.
+ifdef CONFIG_PGO_CLANG_USE
+KBUILD_CFLAGS += -fprofile-use=$(abs_srctree)/kernel/pgo/vmlinux.profdata \
+	-Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date \
+	-Wno-profile-instr-missing
+endif
+
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage \
 	$(call cc-option,-fno-tree-loop-im) \
 	$(call cc-disable-warning,maybe-uninitialized,)
