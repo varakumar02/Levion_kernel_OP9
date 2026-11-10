@@ -13,6 +13,7 @@
 #include <linux/of_address.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 static char *xbl_log_buf;
 size_t xbl_log_size;
@@ -68,9 +69,9 @@ static int xbl_log_kthread(void *arg)
 		goto kobj_fail;
 	}
 
-	node = of_find_node_by_name(parent, "uefi_log");
+	node = of_find_compatible_node(parent, NULL, "oplus,xbl_uefi_kbootlog");
 	if (!node) {
-		pr_err("xbl_log: uefi_log node missing\n");
+		pr_err("xbl_log: oplus,xbl_uefi_kbootlog node missing\n");
 		goto node_fail;
 	}
 
@@ -78,7 +79,7 @@ static int xbl_log_kthread(void *arg)
 		goto node_fail;
 
 	xbl_log_paddr = res_log.start;
-	xbl_log_size = resource_size(&res_log) - 1;
+	xbl_log_size = resource_size(&res_log);
 	pr_debug("xbl_log_addr = %x, size=%d\n", xbl_log_paddr, xbl_log_size);
 
 	addr = memremap(xbl_log_paddr, xbl_log_size, MEMREMAP_WB);
@@ -87,15 +88,14 @@ static int xbl_log_kthread(void *arg)
 		goto remap_fail;
 	}
 
-	xbl_log_buf = kzalloc(xbl_log_size, GFP_KERNEL);
+	xbl_log_buf = vzalloc(xbl_log_size);
 	if (xbl_log_buf) {
 		memcpy(xbl_log_buf, addr, xbl_log_size);
-		xbl_log_buf[xbl_log_size-1] = '\0';
 		memunmap(addr);
 		return 0;
 	}
 
-	kfree(xbl_log_buf);
+	memunmap(addr);
 remap_fail:
 	if (node)
 		of_node_put(node);
