@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/device.h>
+#include <linux/fs.h>
 #include <linux/ioport.h>
 #include <linux/memblock.h>
 #include <linux/of_address.h>
@@ -20,10 +21,8 @@ static ssize_t xbl_log_show(struct file *fp,
 		struct kobject *kobj, struct bin_attribute *bin_attr,
 		char *buf, loff_t offset, size_t count)
 {
-	if (offset < xbl_log_size)
-		return scnprintf(buf, count, "%s", xbl_log_buf + offset);
-
-	return 0;
+	return memory_read_from_buffer(buf, count, &offset, xbl_log_buf,
+				       xbl_log_size);
 }
 
 static struct bin_attribute attribute =
