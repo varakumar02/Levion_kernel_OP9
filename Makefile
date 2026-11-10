@@ -776,9 +776,15 @@ endif # KBUILD_EXTMOD
 # Defaults to vmlinux, but the arch makefile usually adds further targets
 all: vmlinux
 
+# Static functions are profiled as "<source path>;<name>"; strip the srctree
+# prefix (one level per path component, plus the leading '/') so a profile
+# taken on one build host matches a build from any other directory.
+PGO_STRIP_SRCTREE := -mllvm -static-func-strip-dirname-prefix=$(words x $(subst /, ,$(abs_srctree)))
+export PGO_STRIP_SRCTREE
+
 # Block and branch counts only: value profiling (indirect-call targets, memop
 # sizes) takes pgo_lock from instrumented code and is turned off.
-CFLAGS_PGO_CLANG := -fprofile-generate -mllvm -disable-vp=true
+CFLAGS_PGO_CLANG := -fprofile-generate -mllvm -disable-vp=true $(PGO_STRIP_SRCTREE)
 export CFLAGS_PGO_CLANG
 
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage \
