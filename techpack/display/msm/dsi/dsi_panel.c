@@ -94,7 +94,7 @@ void set_esd_check_happened(int val)
 EXPORT_SYMBOL_GPL(set_esd_check_happened);
 #endif
 
-int backlight_max = 4095;
+int backlight_max;
 module_param(backlight_max, int, 0644);
 
 static void dsi_dce_prepare_pps_header(char *buf, u32 pps_delay_ms)
@@ -3399,7 +3399,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 			 panel->name);
 		panel->bl_config.bl_max_level = MAX_BL_LEVEL;
 	} else {
-		panel->bl_config.bl_max_level = backlight_max;
+		panel->bl_config.bl_max_level = backlight_max > 0 ? backlight_max : val;
 	}
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-brightness-max-level",
@@ -3410,7 +3410,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.brightness_max_level = 255;
 		rc = 0;
 	} else {
-		panel->bl_config.brightness_max_level = backlight_max;
+		panel->bl_config.brightness_max_level = backlight_max > 0 ? backlight_max : val;
 	}
 
 	panel->bl_config.bl_inverted_dbv = utils->read_bool(utils->data,
