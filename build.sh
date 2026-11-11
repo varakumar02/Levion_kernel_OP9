@@ -74,6 +74,20 @@ MAKE_FLAGS=(
     CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 )
 
+# ──────────────────────────────────────────────────────────────
+# Module presence — vendor_dlkm only makes sense when the kernel
+# builds loadable modules. A modules-less kernel (CONFIG_MODULES
+# unset → built-in drivers only) has no .ko to pack, so skip the
+# whole vendor_dlkm pipeline instead of hard-failing on 0 modules.
+# Falls back to "enabled" when no .config exists yet, preserving
+# the old behaviour for a bare --vendor_dlkm run before any build.
+# ──────────────────────────────────────────────────────────────
+modules_enabled() {
+    local cfg="${KDIR}/out/.config"
+    [ -f "${cfg}" ] || return 0
+    grep -qx 'CONFIG_MODULES=y' "${cfg}"
+}
+
 # ══════════════════════════════════════════════════════════════
 # KERNEL BUILD  (skipped for --vendor_dlkm)
 # ══════════════════════════════════════════════════════════════
@@ -116,7 +130,7 @@ fi
 # VENDOR_DLKM.IMG  (skipped for --image)
 # ══════════════════════════════════════════════════════════════
 
-if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]]; then
+if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; then
 
     yellow "[*] Generating vendor_dlkm.img..."
 
@@ -254,6 +268,11 @@ EOF
 
 fi
 
+# vendor_dlkm was skipped above when the kernel has no modules — say so
+if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && ! modules_enabled; then
+    green "[✓] CONFIG_MODULES not set — modules-less kernel; skipping vendor_dlkm.img"
+fi
+
 # ══════════════════════════════════════════════════════════════
 # KERNEL.ZIP  (only on full build)
 # ══════════════════════════════════════════════════════════════
@@ -278,18 +297,21 @@ if [[ "${MODE}" == "all" ]]; then
     green "    Replaced Image"
 
     # Place vendor_dlkm.img (the freshly generated one, NOT the stock base)
-    if [ ! -f "${OUT_VDLKM}" ]; then
+    if ! modules_enabled; then
+        yellow "    [!] modules-less kernel — no vendor_dlkm.img to place"
+    elif [ ! -f "${OUT_VDLKM}" ]; then
         red "[✗] Generated vendor_dlkm not found: ${OUT_VDLKM}"
         exit 1
+    else
+        cp -p "${OUT_VDLKM}" "${AK3_DIR}/vendor_dlkm.img"
+        green "    Placed vendor_dlkm.img"
     fi
-    cp -p "${OUT_VDLKM}" "${AK3_DIR}/vendor_dlkm.img"
-    green "    Placed vendor_dlkm.img"
 
     # Replace vendor ramdisk modules — pulled from the SAME prepared staging
     # that built vendor_dlkm (already stripped), so ramdisk and vendor_dlkm
     # carry identical module binaries.
     VR_MODS="${AK3_DIR}/vendor_ramdisk/lib/modules"
-    if [ -d "${VR_MODS}" ]; then
+    if [ -d "${VR_MODS}" ] && modules_enabled; then
         if [ ! -d "${MODULES_DIR}" ]; then
             red "[✗] vendor_dlkm staging missing (${MODULES_DIR}) — can't source ramdisk modules"
             exit 1
@@ -309,7 +331,7 @@ if [[ "${MODE}" == "all" ]]; then
         done
         green "    Copied ${COPIED}/${#RAMDISK_NAMES[@]} vendor ramdisk modules (already stripped)"
     else
-        yellow "    [!] vendor_ramdisk/lib/modules not found in AK3 dir, skipping"
+        yellow "    [!] skipping vendor ramdisk modules (modules-less kernel or no AK3 modules dir)"
     fi
 
     # Zip
@@ -330,5 +352,5 @@ fi
 echo ""
 green "[✓] All done!"
 [[ "${MODE}" == "all" || "${MODE}" == "image" ]]        && echo "    Kernel Image:     ${KDIR}/out/arch/arm64/boot/Image"
-[[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]]  && echo "    vendor_dlkm.img:  ${OUT_VDLKM}  (stock base untouched: ${STOCK_IMG})"
+{ [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; } && echo "    vendor_dlkm.img:  ${OUT_VDLKM}  (stock base untouched: ${STOCK_IMG})"
 [[ "${MODE}" == "all" ]]                                 && echo "    Flashable zip:    ${OUT_ZIP}"

@@ -226,6 +226,16 @@ MAKE_FLAGS=(
     CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 )
 
+# Helper: vendor_dlkm only makes sense when the kernel builds loadable
+# modules. A modules-less kernel (CONFIG_MODULES unset -> built-in only)
+# has no .ko to pack, so Steps 4-6 skip it instead of failing on 0 .ko.
+# Falls back to enabled if out/.config is absent.
+modules_enabled() {
+    local cfg="${KDIR}/out/.config"
+    [ -f "${cfg}" ] || return 0
+    grep -qx 'CONFIG_MODULES=y' "${cfg}"
+}
+
 # Helper: run a command but don't abort on non-zero (for clean/mrproper)
 safe_run() {
     "$@" || warn "Command returned non-zero (continuing): $*"
@@ -262,8 +272,12 @@ make "${MAKE_FLAGS[@]}" INSTALL_MOD_PATH=modules modules_install \
 success "Step 3 complete: Kernel compiled and modules installed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Step 4: Generate vendor_dlkm.img
+# Step 4: Generate vendor_dlkm.img   (skipped when CONFIG_MODULES is unset)
 # ══════════════════════════════════════════════════════════════════════════════
+if ! modules_enabled; then
+    step "Steps 4-5: vendor_dlkm / vendor_ramdisk modules"
+    success "Skipped: CONFIG_MODULES unset — modules-less kernel, nothing to build"
+else
 step "Step 4: Generating vendor_dlkm Image"
 
 mkdir -p "${RUN_DIR}" \
@@ -598,6 +612,7 @@ else
 fi
 
 success "Step 5 complete: vendor_ramdisk modules updated."
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Step 6: Copy Image and vendor_dlkm.img into AK3
@@ -609,10 +624,14 @@ cp -p "${KERNEL_IMAGE}" "${AK3_DIR}/Image" \
     || fail "Failed to copy Kernel Image to ${AK3_DIR}/Image"
 pass "Kernel Image copied to AK3"
 
-info "Copying vendor_dlkm.img → ${AK3_DIR}/vendor_dlkm.img"
-cp -p "${OUT_IMG}" "${AK3_DIR}/vendor_dlkm.img" \
-    || fail "Failed to copy vendor_dlkm.img to ${AK3_DIR}/vendor_dlkm.img"
-pass "vendor_dlkm.img copied to AK3"
+if modules_enabled; then
+    info "Copying vendor_dlkm.img → ${AK3_DIR}/vendor_dlkm.img"
+    cp -p "${OUT_IMG}" "${AK3_DIR}/vendor_dlkm.img" \
+        || fail "Failed to copy vendor_dlkm.img to ${AK3_DIR}/vendor_dlkm.img"
+    pass "vendor_dlkm.img copied to AK3"
+else
+    info "Modules-less kernel — no vendor_dlkm.img to copy into AK3"
+fi
 
 success "Step 6 complete: Artifacts placed in AK3 directory."
 
@@ -650,12 +669,16 @@ echo -e "${BOLD}${GREEN}║          Levion Kernel Build Summary                
 echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  ${BOLD}Kernel Image:${NC}        ${KERNEL_IMAGE}"
+if modules_enabled; then
 echo -e "  ${BOLD}vendor_dlkm.img:${NC}     ${OUT_IMG} (${IMG_SIZE}) [${FS_TYPE^^}]"
 echo -e "  ${BOLD}vendor_dlkm.tar.xz:${NC} ${OUT_TAR} (${TAR_SIZE})"
-echo -e "  ${BOLD}AK3 Zip:${NC}             ${OUT_ZIP} (${ZIP_SIZE})"
 echo -e "  ${BOLD}Modules in image:${NC}    ${NEW_KO_COUNT} .ko files"
 echo -e "  ${BOLD}Loaded modules:${NC}      ${LOAD_COUNT} entries in modules.load"
 echo -e "  ${BOLD}DLKM run dir:${NC}        ${RUN_DIR}"
+else
+echo -e "  ${BOLD}vendor_dlkm.img:${NC}     (none — CONFIG_MODULES unset, modules-less kernel)"
+fi
+echo -e "  ${BOLD}AK3 Zip:${NC}             ${OUT_ZIP} (${ZIP_SIZE})"
 echo ""
 echo -e "${GREEN}Flash ${BOLD}levion_kernel.zip${NC}${GREEN} via ADB Sideload / KernelFlasher.${NC}"
 echo ""
