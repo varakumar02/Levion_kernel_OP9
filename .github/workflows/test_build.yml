@@ -31,7 +31,7 @@ jobs:
         run: |
           AK3_DIR="${HOME}/AnyKernel3"
 
-          git clone --branch op9 https://github.com/varakumar01/AnyKernel3.git "$AK3_DIR"
+          git clone --branch op9 https://github.com/varakumar02/AnyKernel3.git "$AK3_DIR"
 
           if [[ ! -d "$AK3_DIR/.git" ]]; then
             echo "AK3 clone failed"
