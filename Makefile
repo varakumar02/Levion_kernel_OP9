@@ -782,9 +782,11 @@ all: vmlinux
 PGO_STRIP_SRCTREE := -mllvm -static-func-strip-dirname-prefix=$(words x $(subst /, ,$(abs_srctree)))
 export PGO_STRIP_SRCTREE
 
-# Block and branch counts only: value profiling (indirect-call targets, memop
-# sizes) takes pgo_lock from instrumented code and is turned off.
-CFLAGS_PGO_CLANG := -fprofile-generate -mllvm -disable-vp=true $(PGO_STRIP_SRCTREE)
+# Value profiling (indirect-call targets, memop sizes) is ON to test
+# indirect-call promotion. The out-of-nodes warning was moved out of the
+# pgo_lock region (kernel/pgo/instrument.c), so an exhausted vnds pool drops
+# values instead of deadlocking.
+CFLAGS_PGO_CLANG := -fprofile-generate $(PGO_STRIP_SRCTREE)
 export CFLAGS_PGO_CLANG
 
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage \
