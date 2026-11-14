@@ -198,9 +198,13 @@ fi
 pass "Kernel Image present: ${KERNEL_IMAGE}"
 
 BUILD_MODULES_DIR="${KDIR}/out/modules"
-info "Installing kernel modules into ${BUILD_MODULES_DIR}..."
-make "${MAKE_FLAGS[@]}" INSTALL_MOD_PATH=modules modules_install \
-    || fail "modules_install failed"
+if modules_enabled; then
+    info "Installing kernel modules into ${BUILD_MODULES_DIR}..."
+    make "${MAKE_FLAGS[@]}" INSTALL_MOD_PATH=modules modules_install \
+        || fail "modules_install failed"
+else
+    info "CONFIG_MODULES unset — no modules to install"
+fi
 
 success "Step 3 complete: Kernel compiled and modules installed."
 
@@ -512,7 +516,13 @@ mkdir -p "${OUT_DIR}" \
 
 info "Creating levion_kernel.zip from ${AK3_DIR}..."
 cd "${AK3_DIR}"
-zip -r9 "${OUT_ZIP}" . -x ".git/*" ".github/*" \
+# A modules-less kernel must not carry the stock vendor_dlkm.img or the
+# stock ramdisk modules: anykernel.sh only purges the vendor_boot ramdisk's
+# modules.* when the zip has no vendor_dlkm.img, and first-stage init can't
+# load modules into a kernel without module support.
+ZIP_EXCLUDES=(".git/*" ".github/*")
+modules_enabled || ZIP_EXCLUDES+=("vendor_dlkm.img" "vendor_ramdisk/lib/modules/*")
+zip -r9 "${OUT_ZIP}" . -x "${ZIP_EXCLUDES[@]}" \
     || fail "zip failed while creating ${OUT_ZIP}"
 
 if [[ ! -f "${OUT_ZIP}" ]]; then

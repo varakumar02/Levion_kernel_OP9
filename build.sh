@@ -179,12 +179,14 @@ if [[ "${MODE}" == "all" || "${MODE}" == "image" ]]; then
     make -j"$(nproc)" "${MAKE_FLAGS[@]}"
     green "[✓] Kernel built"
 
-    # Step 5 — Install modules
-    yellow "[*] Installing modules..."
-    cd "${KDIR}/out"
-    make modules_install INSTALL_MOD_PATH="${PWD}/modules"
-    cd "${KDIR}"
-    green "[✓] Modules installed → ${BUILD_MODULES_DIR}"
+    # Step 5 — Install modules (none on a modules-less kernel)
+    if modules_enabled; then
+        yellow "[*] Installing modules..."
+        cd "${KDIR}/out"
+        make modules_install INSTALL_MOD_PATH="${PWD}/modules"
+        cd "${KDIR}"
+        green "[✓] Modules installed → ${BUILD_MODULES_DIR}"
+    fi
 
 fi
 
@@ -392,7 +394,12 @@ if [[ "${MODE}" == "all" ]]; then
     OUT_ZIP="${PARENT}/levion_final.zip"
     rm -f "${OUT_ZIP}"
     cd "${AK3_DIR}"
-    zip -r9 "${OUT_ZIP}" . -x ".git/*" -x ".github/*"
+    # Modules-less kernel: leave the stock vendor_dlkm.img and ramdisk modules
+    # out, so anykernel.sh purges the vendor_boot ramdisk's modules.* instead of
+    # first-stage init failing to load modules into a kernel without support.
+    ZIP_EXCLUDES=(".git/*" ".github/*")
+    modules_enabled || ZIP_EXCLUDES+=("vendor_dlkm.img" "vendor_ramdisk/lib/modules/*")
+    zip -r9 "${OUT_ZIP}" . -x "${ZIP_EXCLUDES[@]}"
     cd "${KDIR}"
 
     if [ -f "${KEY_DIR}/releasekey.pk8" ] && [ -f "${KEY_DIR}/releasekey.x509.pem" ]; then
