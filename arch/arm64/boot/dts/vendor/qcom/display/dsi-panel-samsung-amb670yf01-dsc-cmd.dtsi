@@ -4988,7 +4988,7 @@
 	qcom,mdss-brightness-default-level = <400>;
 	qcom,mdss-brightness-normal-max-level = <2047>;
 	qcom,mdss-brightness-max-level = <2047>;
-	qcom,mdss-dsi-dc-backlight-level = <520>;
+	qcom,mdss-dsi-dc-backlight-level = <260>;
 	oplus,dsi-fod-brightness = <0 0xff>,
 			<2 0xf2>,
 			<4 0xed>,
@@ -5013,30 +5013,30 @@
 			<1800 0x32>,
 			<2047 0x24>;
 	oplus,dsi-dc-brightness = <0 0xff>,
-			<2 0xFC>,
-			<4 0xF9>,
-			<6 0xF9>,
-			<8 0xF8>,
-			<10 0xF7>,
-			<15 0xF6>,
-			<20 0xF4>,
-			<30 0xF0>,
-			<40 0xEB>,
-			<50 0xE6>,
-			<60 0xE1>,
-			<70 0xDD>,
-			<80 0xD8>,
-			<100 0xCF>,
-			<120 0xC5>,
-			<150 0xB9>,
-			<200 0xA2>,
-			<250 0x8C>,
-			<300 0x76>,
-			<350 0x5B>,
-			<400 0x44>,
-			<450 0x2C>,
-			<500 0x0D>,
-			<520 0x00>;
+			<1 0xFC>,
+			<2 0xF9>,
+			<3 0xF9>,
+			<4 0xF8>,
+			<5 0xF7>,
+			<7 0xF6>,
+			<10 0xF4>,
+			<15 0xF0>,
+			<20 0xEB>,
+			<25 0xE6>,
+			<30 0xE1>,
+			<35 0xDD>,
+			<40 0xD8>,
+			<50 0xCF>,
+			<60 0xC5>,
+			<75 0xB9>,
+			<100 0xA2>,
+			<125 0x8C>,
+			<150 0x76>,
+			<175 0x5B>,
+			<200 0x44>,
+			<225 0x2C>,
+			<250 0x0D>,
+			<260 0x00>;
 
 	/* factory config */
 	oplus,mdss-dsi-vendor-name = "AMB670YF01";
