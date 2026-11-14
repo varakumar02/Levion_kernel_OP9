@@ -11,7 +11,8 @@
 #   ├── Levion_kernel_OP9/     ← kernel source — script lives here
 #   │   └── build_levion.sh
 #   ├── vendor_dlkm.img        ← stock EROFS image (used as base)
-#   └── levion_kernel/         ← AnyKernel3 dir
+#   ├── levion_kernel/         ← AnyKernel3 dir
+#   └── toolchains/neutron-clang/  ← auto-imported by this script
 
 set -euo pipefail
 
@@ -52,6 +53,43 @@ done
 green()  { echo -e "\e[1;32m$*\e[0m"; }
 yellow() { echo -e "\e[1;93m$*\e[0m"; }
 red()    { echo -e "\e[1;31m$*\e[0m"; }
+
+# ──────────────────────────────────────────────────────────────
+# Neutron Clang — auto-imported into <parent>/toolchains/neutron-clang.
+# Downloaded when missing or when a newer release is out; reused
+# otherwise (also when GitHub can't be reached but a copy exists).
+# ──────────────────────────────────────────────────────────────
+
+NEUTRON_REPO="Neutron-Toolchains/clang-build-catalogue"
+NEUTRON_DIR="${PARENT}/toolchains/neutron-clang"
+
+setup_neutron_clang() {
+    local tag have=""
+    [ -f "${NEUTRON_DIR}/.release" ] && have=$(<"${NEUTRON_DIR}/.release")
+    tag=$(curl -fsSL "https://api.github.com/repos/${NEUTRON_REPO}/releases/latest" 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])' 2>/dev/null) || tag=""
+    if [ -x "${NEUTRON_DIR}/bin/clang" ] && { [ -z "${tag}" ] || [ "${tag}" = "${have}" ]; }; then
+        green "[✓] Neutron Clang ${have:-?} already present"
+        return 0
+    fi
+    [ -n "${tag}" ] || { red "[✗] Can't resolve the latest Neutron Clang release and none is installed"; exit 1; }
+    yellow "[*] Importing Neutron Clang ${tag}..."
+    local stage; stage=$(mktemp -d "${PARENT}/.neutron-clang.XXXXXX")
+    curl -fL --retry 3 "https://github.com/${NEUTRON_REPO}/releases/download/${tag}/neutron-clang-${tag}.tar.zst" \
+        | tar --zstd -xf - -C "${stage}" --strip-components=1 \
+        && "${stage}/bin/clang" --version >/dev/null \
+        || { rm -rf "${stage}"; red "[✗] Neutron Clang download failed"; exit 1; }
+    echo "${tag}" > "${stage}/.release"
+    mkdir -p "$(dirname "${NEUTRON_DIR}")"
+    rm -rf "${NEUTRON_DIR}" && mv "${stage}" "${NEUTRON_DIR}"
+    green "[✓] Neutron Clang ${tag} → ${NEUTRON_DIR}"
+}
+
+if [[ "${MODE}" == "all" || "${MODE}" == "image" ]]; then
+    setup_neutron_clang
+    export PATH="${NEUTRON_DIR}/bin:${PATH}"
+    green "    $(clang --version | head -1)"
+fi
 
 # ──────────────────────────────────────────────────────────────
 # Common make flags
