@@ -92,6 +92,30 @@ if [[ "${MODE}" == "all" || "${MODE}" == "image" ]]; then
 fi
 
 # ──────────────────────────────────────────────────────────────
+# Zip signing — ROM releasekey from the priv-keys checkout next to
+# the kernel (override the directory with LEVION_KEY_DIR)
+# ──────────────────────────────────────────────────────────────
+
+KEY_DIR="${LEVION_KEY_DIR:-${PARENT}/vendor_aox-priv_keys-template}"
+
+# sign_zip <zip> <releasekey.pk8> <releasekey.x509.pem>
+# Signs the zip in place with the ROM releasekey (jarsigner, SHA256withRSA)
+# and verifies it. The PKCS#12 copy of the key lives in a temp dir that is
+# removed afterwards.
+sign_zip() {
+    local zip="$1" pk8="$2" crt="$3" tmp rc=0
+    tmp=$(mktemp -d) && chmod 700 "${tmp}" || return 1
+    openssl pkcs8 -inform DER -nocrypt -in "${pk8}" -out "${tmp}/key.pem" \
+        && openssl pkcs12 -export -in "${crt}" -inkey "${tmp}/key.pem" -name releasekey \
+            -passout pass:levion -out "${tmp}/key.p12" \
+        && jarsigner -keystore "${tmp}/key.p12" -storetype PKCS12 -storepass levion \
+            -sigalg SHA256withRSA -digestalg SHA-256 "${zip}" releasekey >/dev/null \
+        && jarsigner -verify "${zip}" | grep -q "jar verified" || rc=1
+    rm -rf "${tmp}"
+    return "${rc}"
+}
+
+# ──────────────────────────────────────────────────────────────
 # Common make flags
 # ──────────────────────────────────────────────────────────────
 
@@ -366,9 +390,18 @@ if [[ "${MODE}" == "all" ]]; then
 
     # Zip
     OUT_ZIP="${PARENT}/levion_final.zip"
+    rm -f "${OUT_ZIP}"
     cd "${AK3_DIR}"
     zip -r9 "${OUT_ZIP}" . -x ".git/*" -x ".github/*"
     cd "${KDIR}"
+
+    if [ -f "${KEY_DIR}/releasekey.pk8" ] && [ -f "${KEY_DIR}/releasekey.x509.pem" ]; then
+        sign_zip "${OUT_ZIP}" "${KEY_DIR}/releasekey.pk8" "${KEY_DIR}/releasekey.x509.pem" \
+            || { red "[✗] Signing failed"; exit 1; }
+        green "    Signed with releasekey ($(openssl x509 -in "${KEY_DIR}/releasekey.x509.pem" -noout -fingerprint -sha256 | cut -d= -f2))"
+    else
+        yellow "    [!] No releasekey in ${KEY_DIR} — zip left unsigned"
+    fi
 
     ZIP_SIZE=$(du -sh "${OUT_ZIP}" | cut -f1)
     green "[✓] kernel.zip → ${OUT_ZIP} (${ZIP_SIZE})"

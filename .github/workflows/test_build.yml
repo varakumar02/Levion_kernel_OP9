@@ -36,6 +36,9 @@ jobs:
         run: |
           chmod +x .github/compile.sh
           .github/compile.sh
+        env:
+          RELEASEKEY_PK8_B64: ${{ secrets.RELEASEKEY_PK8_B64 }}
+          RELEASEKEY_X509: ${{ secrets.RELEASEKEY_X509 }}
 
       # Step 4: Find generated zip
       - name: Find generated zip
