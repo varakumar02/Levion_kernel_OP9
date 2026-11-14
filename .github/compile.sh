@@ -2,48 +2,10 @@
 # compile.sh — Full Levion Kernel build pipeline for OnePlus 9 (lemonade / SM8350)
 # Steps: deps → Neutron Clang → compile → vendor_dlkm → AK3 zip → summary
 #
-# Usage: bash compile.sh
+# Usage: bash compile.sh   (vendor_dlkm.img, when the kernel has modules, is ext4)
 # Intended for GitHub Actions (runs with +x chmod)
 
 set -euo pipefail
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Argument Parsing
-# ══════════════════════════════════════════════════════════════════════════════
-
-FS_TYPE=""
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --fs)
-            shift
-            FS_TYPE="${1:-}"
-            if [[ "${FS_TYPE}" != "erofs" && "${FS_TYPE}" != "ext4" ]]; then
-                echo -e "\033[0;31m[ERR]\033[0m   Invalid --fs value '${FS_TYPE}'. Must be 'erofs' or 'ext4'." >&2
-                echo "Usage: bash compile.sh --fs <erofs|ext4>" >&2
-                exit 1
-            fi
-            shift
-            ;;
-        -h|--help)
-            echo "Usage: bash compile.sh --fs <erofs|ext4>"
-            echo ""
-            echo "  --fs erofs   Build vendor_dlkm.img as an EROFS image (default for most modern devices)"
-            echo "  --fs ext4    Build vendor_dlkm.img as an ext4 image"
-            exit 0
-            ;;
-        *)
-            echo -e "\033[0;31m[ERR]\033[0m   Unknown argument: $1" >&2
-            echo "Usage: bash compile.sh --fs <erofs|ext4>" >&2
-            exit 1
-            ;;
-    esac
-done
-
-if [[ -z "${FS_TYPE}" ]]; then
-    echo -e "\033[0;31m[ERR]\033[0m   --fs argument is required. Usage: bash compile.sh --fs <erofs|ext4>" >&2
-    exit 1
-fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Global Configuration
@@ -420,115 +382,47 @@ tar -cpf - -C "${EXTRACT_DIR}" lib/ | xz -9e -T0 > "${OUT_TAR}" \
 TAR_SIZE=$(du -sh "${OUT_TAR}" | cut -f1)
 pass "Tarball created: ${OUT_TAR} (${TAR_SIZE})"
 
-# ── Build vendor_dlkm.img (EROFS or ext4 based on --fs) ──────────────────────
+# ── Build vendor_dlkm.img (ext4) ─────────────────────────────────────────────
 OUT_IMG="${RUN_DIR}/vendor_dlkm_${TIMESTAMP}.img"
-info "Building vendor_dlkm image as ${FS_TYPE^^} → ${OUT_IMG}..."
+info "Building vendor_dlkm image as EXT4 → ${OUT_IMG}..."
 
-FILE_CONTEXTS="${RUN_DIR}/file_contexts"
-cat <<'EOF' > "${FILE_CONTEXTS}"
-/ u:object_r:vendor_file:s0
-/vendor_dlkm(/.*)? u:object_r:vendor_file:s0
-/vendor_dlkm/etc(/.*)? u:object_r:vendor_configs_file:s0
-EOF
+dd if=/dev/zero of="${OUT_IMG}" bs=1M count=512 \
+    || fail "dd failed — could not allocate ext4 image"
+mke2fs \
+    -O "extent,huge_file" \
+    -T largefile \
+    -L vendor_dlkm \
+    -d "${EXTRACT_DIR}" \
+    "${OUT_IMG}" \
+    || fail "mke2fs failed — could not format ext4 image"
+e2fsck -f -y "${OUT_IMG}" 2>&1 \
+    || warn "e2fsck returned non-zero — inspect image if flashing fails"
+resize2fs -M "${OUT_IMG}" \
+    || fail "resize2fs failed — could not shrink ext4 image"
 
-if [[ "${FS_TYPE}" == "erofs" ]]; then
-    # ── EROFS path ────────────────────────────────────────────────────────────
-    mkfs.erofs \
-        --mount-point=/vendor_dlkm \
-        --all-root \
-        --file-contexts="${FILE_CONTEXTS}" \
-        -zlz4 \
-        -b4096 \
-        -T1230768000 \
-        "${OUT_IMG}" \
-        "${EXTRACT_DIR}" \
-        || fail "mkfs.erofs failed — could not build vendor_dlkm.img"
-
-    if [[ ! -f "${OUT_IMG}" ]]; then
-        fail "vendor_dlkm.img was not created at ${OUT_IMG}"
-    fi
-
-    ORIG_SIZE=$(stat --format="%s" "${STOCK_IMG}")
-    NEW_SIZE=$(stat --format="%s" "${OUT_IMG}")
-
-    if [[ "${NEW_SIZE}" -le "${ORIG_SIZE}" ]]; then
-        info "Padding image to match partition size (${ORIG_SIZE} bytes)..."
-        truncate -s "${ORIG_SIZE}" "${OUT_IMG}" \
-            || fail "truncate failed while padding ${OUT_IMG}"
-        pass "Image padded to ${ORIG_SIZE} bytes"
-    else
-        warn "New image (${NEW_SIZE}) > original partition (${ORIG_SIZE})!"
-        warn "Image may not fit — consider removing unused modules."
-    fi
-
-    IMG_SIZE=$(du -sh "${OUT_IMG}" | cut -f1)
-    pass "vendor_dlkm.img created: ${OUT_IMG} (${IMG_SIZE})"
-
-    info "Verifying EROFS image with fsck.erofs..."
-    if fsck.erofs "${OUT_IMG}" 2>&1; then
-        pass "vendor_dlkm.img passed fsck verification"
-    else
-        warn "vendor_dlkm.img failed fsck — image may still be usable but inspect it"
-    fi
-
+ORIG_SIZE=$(stat --format="%s" "${STOCK_IMG}")
+NEW_SIZE=$(stat --format="%s" "${OUT_IMG}")
+if [[ "${NEW_SIZE}" -le "${ORIG_SIZE}" ]]; then
+    info "Padding image to match partition size (${ORIG_SIZE} bytes)..."
+    truncate -s "${ORIG_SIZE}" "${OUT_IMG}" \
+        || fail "truncate failed while padding ${OUT_IMG}"
+    pass "Image padded to ${ORIG_SIZE} bytes"
 else
-    # ── ext4 path ─────────────────────────────────────────────────────────────
-    EXT4_TMP="${OUT_IMG}.tmp"
-
-    info "Allocating 512 MiB sparse image..."
-    dd if=/dev/zero of="${EXT4_TMP}" bs=1M count=512 status=progress \
-        || fail "dd failed — could not allocate ext4 scratch image"
-
-    info "Formatting as ext4 (label: vendor_dlkm)..."
-    mke2fs -t ext4 \
-        -O extent,huge_file,dir_index,filetype,resize_inode,sparse_super,large_file \
-        -O ^64bit,^metadata_csum,^flex_bg,^has_journal,^dir_nlink,^extra_isize,^orphan_file \
-        -T largefile \
-        -L vendor_dlkm \
-        -d "${EXTRACT_DIR}" \
-        "${EXT4_TMP}" \
-        || fail "mke2fs failed — could not format ext4 image"
-
-    info "Running e2fsck pass on raw image..."
-    e2fsck -f -y "${EXT4_TMP}" 2>&1 \
-        || warn "e2fsck returned non-zero — inspect image if flashing fails"
-
-    info "Shrinking ext4 image to minimum size..."
-    resize2fs -M "${EXT4_TMP}" \
-        || fail "resize2fs failed — could not shrink ext4 image"
-
-    mv "${EXT4_TMP}" "${OUT_IMG}" \
-        || fail "Failed to rename shrunk image to ${OUT_IMG}"
-
-    if [[ ! -f "${OUT_IMG}" ]]; then
-        fail "vendor_dlkm.img was not created at ${OUT_IMG}"
-    fi
-
-    ORIG_SIZE=$(stat --format="%s" "${STOCK_IMG}")
-    NEW_SIZE=$(stat --format="%s" "${OUT_IMG}")
-
-    if [[ "${NEW_SIZE}" -le "${ORIG_SIZE}" ]]; then
-        info "Padding image to match partition size (${ORIG_SIZE} bytes)..."
-        truncate -s "${ORIG_SIZE}" "${OUT_IMG}" \
-            || fail "truncate failed while padding ${OUT_IMG}"
-        pass "Image padded to ${ORIG_SIZE} bytes"
-    else
-        warn "New image (${NEW_SIZE}) > original partition (${ORIG_SIZE})!"
-        warn "Image may not fit — consider removing unused modules."
-    fi
-
-    IMG_SIZE=$(du -sh "${OUT_IMG}" | cut -f1)
-    pass "vendor_dlkm.img created: ${OUT_IMG} (${IMG_SIZE})"
-
-    info "Verifying ext4 image with e2fsck..."
-    if e2fsck -f -n "${OUT_IMG}" 2>&1; then
-        pass "vendor_dlkm.img passed e2fsck verification"
-    else
-        warn "vendor_dlkm.img failed e2fsck — image may still be usable but inspect it"
-    fi
+    warn "New image (${NEW_SIZE}) > original partition (${ORIG_SIZE})!"
+    warn "Image may not fit — consider removing unused modules."
 fi
 
-success "Step 4 complete: vendor_dlkm.img built (${FS_TYPE^^})."
+IMG_SIZE=$(du -sh "${OUT_IMG}" | cut -f1)
+pass "vendor_dlkm.img created: ${OUT_IMG} (${IMG_SIZE})"
+
+info "Verifying ext4 image with e2fsck..."
+if e2fsck -f -n "${OUT_IMG}" 2>&1; then
+    pass "vendor_dlkm.img passed e2fsck verification"
+else
+    warn "vendor_dlkm.img failed e2fsck — image may still be usable but inspect it"
+fi
+
+success "Step 4 complete: vendor_dlkm.img built (EXT4)."
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Step 5: Update vendor_ramdisk Modules in AK3
@@ -641,7 +535,7 @@ echo -e "${BOLD}${GREEN}╚═════════════════�
 echo ""
 echo -e "  ${BOLD}Kernel Image:${NC}        ${KERNEL_IMAGE}"
 if modules_enabled; then
-echo -e "  ${BOLD}vendor_dlkm.img:${NC}     ${OUT_IMG} (${IMG_SIZE}) [${FS_TYPE^^}]"
+echo -e "  ${BOLD}vendor_dlkm.img:${NC}     ${OUT_IMG} (${IMG_SIZE}) [EXT4]"
 echo -e "  ${BOLD}vendor_dlkm.tar.xz:${NC} ${OUT_TAR} (${TAR_SIZE})"
 echo -e "  ${BOLD}Modules in image:${NC}    ${NEW_KO_COUNT} .ko files"
 echo -e "  ${BOLD}Loaded modules:${NC}      ${LOAD_COUNT} entries in modules.load"

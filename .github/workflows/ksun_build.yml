@@ -2,15 +2,6 @@ name: KernelSU Next Kernel Build
 
 on:
   workflow_dispatch:
-    inputs:
-      filesystem:
-        description: "Select filesystem type"
-        required: true
-        default: erofs
-        type: choice
-        options:
-          - erofs
-          - ext4
 
 permissions:
   contents: write
@@ -44,8 +35,7 @@ jobs:
       - name: Make compile.sh executable and run
         run: |
           chmod +x .github/compile.sh
-          echo "Using filesystem: ${{ github.event.inputs.filesystem }}"
-          .github/compile.sh --fs "${{ github.event.inputs.filesystem }}"
+          .github/compile.sh
 
       # Step 4: Find generated zip
       - name: Find generated zip

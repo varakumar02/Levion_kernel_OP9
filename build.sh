@@ -10,7 +10,7 @@
 #   <parent>/
 #   ├── Levion_kernel_OP9/     ← kernel source — script lives here
 #   │   └── build_levion.sh
-#   ├── vendor_dlkm.img        ← stock EROFS image (used as base)
+#   ├── vendor_dlkm.img        ← stock image (erofs or ext4, used as base)
 #   ├── levion_kernel/         ← AnyKernel3 dir
 #   └── toolchains/neutron-clang/  ← auto-imported by this script
 
@@ -271,25 +271,17 @@ if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; th
         fi
     done
 
-    # SELinux file_contexts — must match stock so modules get vendor_file labels
-    # (matches gen_vendor_dlkm.sh; without this the image has wrong SELinux props)
-    FILE_CONTEXTS="${SCRATCH}/file_contexts"
-    cat <<'EOF' >"${FILE_CONTEXTS}"
-/ u:object_r:vendor_file:s0
-/vendor_dlkm(/.*)? u:object_r:vendor_file:s0
-/vendor_dlkm/etc(/.*)? u:object_r:vendor_configs_file:s0
-EOF
-
-    # Build EROFS image straight to the output (stock is never touched)
-    mkfs.erofs \
-        --mount-point=/vendor_dlkm \
-        --all-root \
-        --file-contexts="${FILE_CONTEXTS}" \
-        -zlz4 \
-        -b4096 \
-        -T1230768000 \
-        "${OUT_VDLKM}" \
-        "${EXTRACT_DIR}"
+    # Build the ext4 image straight to the output (stock is never touched)
+    rm -f "${OUT_VDLKM}"
+    dd if=/dev/zero of="${OUT_VDLKM}" bs=1M count=512
+    mke2fs \
+        -O "extent,huge_file" \
+        -T largefile \
+        -L vendor_dlkm \
+        -d "${EXTRACT_DIR}" \
+        "${OUT_VDLKM}"
+    e2fsck -f -y "${OUT_VDLKM}" || true
+    resize2fs -M "${OUT_VDLKM}"
 
     # Pad up to the stock partition size if smaller
     ORIG_SIZE=$(stat --format="%s" "${STOCK_IMG}")
@@ -300,7 +292,7 @@ EOF
         red "[!] WARNING: new image (${NEW_SIZE}B) > stock partition (${ORIG_SIZE}B)!"
     fi
 
-    fsck.erofs "${OUT_VDLKM}" 2>&1 && green "    EROFS fsck passed" || { red "[✗] EROFS fsck failed!"; exit 1; }
+    e2fsck -f -n "${OUT_VDLKM}" && green "    ext4 fsck passed" || { red "[✗] ext4 fsck failed!"; exit 1; }
 
     green "[✓] vendor_dlkm.img written → ${OUT_VDLKM} (stock left untouched)"
 
