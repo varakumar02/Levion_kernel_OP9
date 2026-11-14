@@ -685,7 +685,7 @@
 &dsi_samsung_amb655x_dsc_cmd {
 	qcom,panel-supply-entries = <&dsi_panel_oplus_optimization_pwr_supply>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
-	qcom,mdss-dsi-dc-backlight-level = <520>;
+	qcom,mdss-dsi-dc-backlight-level = <260>;
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-normal-max-level = <2047>;
 	qcom,mdss-dsi-bl-max-level = <2047>;
