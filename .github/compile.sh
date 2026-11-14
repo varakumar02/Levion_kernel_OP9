@@ -524,6 +524,48 @@ pass "AnyKernel3 zip created: ${OUT_ZIP} (${ZIP_SIZE})"
 success "Step 7 complete: Flash zip ready."
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Step 7b: Sign the zip with the ROM releasekey
+#   Key: vendor_aox-priv_keys-template releasekey.pk8 + releasekey.x509.pem,
+#   passed in as the RELEASEKEY_PK8_B64 (base64 of the .pk8) and
+#   RELEASEKEY_X509 (PEM text) repository secrets.
+# ══════════════════════════════════════════════════════════════════════════════
+step "Step 7b: Signing the zip"
+
+# sign_zip <zip> <releasekey.pk8> <releasekey.x509.pem>
+# Signs the zip in place with the ROM releasekey (jarsigner, SHA256withRSA)
+# and verifies it. The PKCS#12 copy of the key lives in a temp dir that is
+# removed afterwards.
+sign_zip() {
+    local zip="$1" pk8="$2" crt="$3" tmp rc=0
+    tmp=$(mktemp -d) && chmod 700 "${tmp}" || return 1
+    openssl pkcs8 -inform DER -nocrypt -in "${pk8}" -out "${tmp}/key.pem" \
+        && openssl pkcs12 -export -in "${crt}" -inkey "${tmp}/key.pem" -name releasekey \
+            -passout pass:levion -out "${tmp}/key.p12" \
+        && jarsigner -keystore "${tmp}/key.p12" -storetype PKCS12 -storepass levion \
+            -sigalg SHA256withRSA -digestalg SHA-256 "${zip}" releasekey >/dev/null \
+        && jarsigner -verify "${zip}" | grep -q "jar verified" || rc=1
+    rm -rf "${tmp}"
+    return "${rc}"
+}
+
+SIGNED="no"
+if [[ -n "${RELEASEKEY_PK8_B64:-}" && -n "${RELEASEKEY_X509:-}" ]]; then
+    KEY_TMP=$(mktemp -d) && chmod 700 "${KEY_TMP}"
+    base64 -d <<<"${RELEASEKEY_PK8_B64}" > "${KEY_TMP}/releasekey.pk8"
+    printf '%s\n' "${RELEASEKEY_X509}" > "${KEY_TMP}/releasekey.x509.pem"
+    if sign_zip "${OUT_ZIP}" "${KEY_TMP}/releasekey.pk8" "${KEY_TMP}/releasekey.x509.pem"; then
+        SIGNED=$(openssl x509 -in "${KEY_TMP}/releasekey.x509.pem" -noout -fingerprint -sha256 | cut -d= -f2)
+        pass "Zip signed with the releasekey (SHA-256 ${SIGNED})"
+    else
+        rm -rf "${KEY_TMP}"
+        fail "Signing failed"
+    fi
+    rm -rf "${KEY_TMP}"
+else
+    warn "RELEASEKEY_PK8_B64 / RELEASEKEY_X509 not set — zip left unsigned"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Step 8: Build Complete — Release Summary
 # ══════════════════════════════════════════════════════════════════════════════
 step "Step 8: Build Complete — Release Summary"
@@ -544,6 +586,7 @@ else
 echo -e "  ${BOLD}vendor_dlkm.img:${NC}     (none — CONFIG_MODULES unset, modules-less kernel)"
 fi
 echo -e "  ${BOLD}AK3 Zip:${NC}             ${OUT_ZIP} (${ZIP_SIZE})"
+echo -e "  ${BOLD}Signed (releasekey):${NC} ${SIGNED}"
 echo ""
 echo -e "${GREEN}Flash ${BOLD}levion_kernel.zip${NC}${GREEN} via ADB Sideload / KernelFlasher.${NC}"
 echo ""
