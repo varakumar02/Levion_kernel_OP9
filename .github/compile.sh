@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # compile.sh — Full Levion Kernel build pipeline for OnePlus 9 (lemonade / SM8350)
-# Steps: deps → clang → compile → vendor_dlkm → AK3 zip → summary
+# Steps: deps → Neutron Clang → compile → vendor_dlkm → AK3 zip → summary
 #
 # Usage: bash compile.sh
 # Intended for GitHub Actions (runs with +x chmod)
@@ -50,9 +50,9 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 
 WORK_DIR="${HOME}"
-TOOLCHAIN_DIR="${WORK_DIR}/linux-x86"
-CLANG_VERSION="clang-r547379"
-CLANG_PATH="${TOOLCHAIN_DIR}/${CLANG_VERSION}/bin"
+TOOLCHAIN_DIR="${WORK_DIR}/neutron-clang"
+CLANG_PATH="${TOOLCHAIN_DIR}/bin"
+NEUTRON_REPO="Neutron-Toolchains/clang-build-catalogue"
 
 KDIR="${GITHUB_WORKSPACE}"
 AK3_DIR="${WORK_DIR}/AnyKernel3"
@@ -122,7 +122,7 @@ case "${DISTRO}" in
     ubuntu|debian|linuxmint)
         info "Running apt install..."
         sudo apt-get update -qq || fail "apt-get update failed"
-        sudo apt-get install -y bc bison build-essential cpio curl flex git kmod libelf-dev libncurses-dev libssl-dev lld llvm make pahole python3 rsync tar wget zip zlib1g-dev erofs-utils \
+        sudo apt-get install -y bc bison build-essential cpio curl flex zstd git kmod libelf-dev libncurses-dev libssl-dev lld llvm make pahole python3 rsync tar wget zip zlib1g-dev erofs-utils \
             || fail "apt-get install failed"
         ;;
     fedora|rhel|centos)
@@ -144,57 +144,28 @@ esac
 success "Step 1 complete: Dependencies installed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Step 2: Pull Clang Toolchain (clang-r547379 from AOSP prebuilts)
+# Step 2: Fetch the latest Neutron Clang (fresh download on every run)
 # ══════════════════════════════════════════════════════════════════════════════
-step "Step 2: Pulling Clang Toolchain (${CLANG_VERSION})"
+step "Step 2: Fetching latest Neutron Clang"
 
-CLANG_REPO_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86"
+NEUTRON_TAG=$(curl -fsSL "https://api.github.com/repos/${NEUTRON_REPO}/releases/latest" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])') \
+    || fail "Could not resolve the latest Neutron Clang release"
+NEUTRON_URL="https://github.com/${NEUTRON_REPO}/releases/download/${NEUTRON_TAG}/neutron-clang-${NEUTRON_TAG}.tar.zst"
+info "Release : ${NEUTRON_TAG}"
+info "Source  : ${NEUTRON_URL}"
 
-info "Destination : ${TOOLCHAIN_DIR}"
-info "Source      : ${CLANG_REPO_URL}"
-
-mkdir -p "${TOOLCHAIN_DIR}" \
+rm -rf "${TOOLCHAIN_DIR}" && mkdir -p "${TOOLCHAIN_DIR}" \
     || fail "Failed to create toolchain directory: ${TOOLCHAIN_DIR}"
-
-if [[ -d "${TOOLCHAIN_DIR}/.git" ]]; then
-    info "Repo already exists — fetching latest..."
-    cd "${TOOLCHAIN_DIR}"
-    git fetch --depth=1 origin \
-        || fail "git fetch failed in ${TOOLCHAIN_DIR}"
-else
-    info "Initialising partial clone (no blobs yet)..."
-    git clone \
-        --filter=blob:none \
-        --no-checkout \
-        --depth=1 \
-        --single-branch \
-        "${CLANG_REPO_URL}" \
-        "${TOOLCHAIN_DIR}" \
-        || fail "git clone failed for ${CLANG_REPO_URL}"
-    cd "${TOOLCHAIN_DIR}"
-fi
-
-info "Configuring sparse-checkout for ${CLANG_VERSION}/ only..."
-git sparse-checkout init --cone \
-    || fail "git sparse-checkout init failed"
-git sparse-checkout set "${CLANG_VERSION}" \
-    || fail "git sparse-checkout set failed for ${CLANG_VERSION}"
-
-info "Downloading toolchain blobs..."
-git checkout \
-    || fail "git checkout failed while downloading toolchain blobs"
-
-[[ -d "${TOOLCHAIN_DIR}/${CLANG_VERSION}" ]] \
-    || fail "Toolchain directory missing after checkout: ${TOOLCHAIN_DIR}/${CLANG_VERSION}"
+curl -fL --retry 3 "${NEUTRON_URL}" | tar --zstd -xf - -C "${TOOLCHAIN_DIR}" --strip-components=1 \
+    || fail "Neutron Clang download/extract failed"
 
 export PATH="${CLANG_PATH}:${PATH}"
-
-if ! command -v clang &>/dev/null; then
-    fail "clang not found in PATH after toolchain setup. Expected at: ${CLANG_PATH}"
-fi
+command -v clang &>/dev/null && command -v ld.lld &>/dev/null \
+    || fail "clang/ld.lld not found after toolchain setup. Expected at: ${CLANG_PATH}"
 
 pass "Clang version: $(clang --version | head -1)"
-success "Step 2 complete: Toolchain pulled → ${TOOLCHAIN_DIR}/${CLANG_VERSION}"
+success "Step 2 complete: Neutron Clang ${NEUTRON_TAG} → ${TOOLCHAIN_DIR}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Step 3: Compile the Kernel
