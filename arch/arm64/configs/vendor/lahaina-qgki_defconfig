@@ -345,6 +345,8 @@ CONFIG_PCIE_DW_PLAT_EP=y
 CONFIG_PCIE_QCOM=y
 CONFIG_PCIE_KIRIN=y
 CONFIG_PCI_ENDPOINT=y
+CONFIG_EXTRA_FIRMWARE="ath9k_htc/htc_7010-1.4.0.fw ath9k_htc/htc_9271-1.4.0.fw carl9170-1.fw htc_7010.fw htc_9271.fw mediatek/mt7610u.bin mediatek/mt7662u.bin mediatek/mt7662u_rom_patch.bin mt7601u.bin rt2870.bin rt73.bin rtl_bt/rtl8723a_fw.bin rtl_bt/rtl8723b_config.bin rtl_bt/rtl8723b_fw.bin rtl_bt/rtl8723bs_config.bin rtl_bt/rtl8723bs_fw.bin rtl_bt/rtl8723d_config.bin rtl_bt/rtl8723d_fw.bin rtl_bt/rtl8761a_config.bin rtl_bt/rtl8761a_fw.bin rtl_bt/rtl8821a_config.bin rtl_bt/rtl8821a_fw.bin rtl_bt/rtl8821c_config.bin rtl_bt/rtl8821c_fw.bin rtl_bt/rtl8822b_config.bin rtl_bt/rtl8822b_fw.bin rtl_bt/rtl8822cu_config.bin rtl_bt/rtl8822cu_fw.bin rtlwifi/rtl8188eufw.bin rtlwifi/rtl8192cufw_A.bin rtlwifi/rtl8192cufw_B.bin rtlwifi/rtl8192cufw.bin rtlwifi/rtl8192cufw_TMSC.bin rtlwifi/rtl8192eu_nic.bin rtlwifi/rtl8723aufw_A.bin rtlwifi/rtl8723aufw_B.bin rtlwifi/rtl8723aufw_B_NoBT.bin rtlwifi/rtl8723bu_nic.bin rtw88/rtw8812a_fw.bin rtw88/rtw8814a_fw.bin rtw88/rtw8821c_fw.bin zd1211/zd1211b_ub zd1211/zd1211b_uphr zd1211/zd1211b_ur zd1211/zd1211_ub zd1211/zd1211_uphr zd1211/zd1211_ur"
+CONFIG_EXTRA_FIRMWARE_DIR="firmware"
 CONFIG_FW_LOADER_USER_HELPER=y
 CONFIG_FW_LOADER_USER_HELPER_FALLBACK=y
 # CONFIG_FW_CACHE is not set

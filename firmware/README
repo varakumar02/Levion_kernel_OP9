@@ -1,0 +1,22 @@
+USB Wi-Fi / Bluetooth firmware built into the kernel with CONFIG_EXTRA_FIRMWARE
+(CONFIG_EXTRA_FIRMWARE_DIR="firmware"), one blob per file the built-in
+NetHunter USB drivers request: ath9k_htc, carl9170, mt7601u, mt76x0u, mt76x2u,
+rt2800usb, rt73usb, rtl8192cu, rtl8xxxu, rtl8188eu, rtw88 (8812AU/8814AU/8821CU),
+zd1211rw and btrtl. request_firmware() finds them inside the Image, so no
+/system or /vendor firmware files are needed and they work on any ROM.
+
+Sources:
+- linux-firmware 20261019 for every file except the two below.
+- rtl_bt/rtl8822cu_fw.bin: the "Realtech" (v1) epatch, from the NetHunter
+  wireless firmware module (MrRob0-X, v2.0). linux-firmware now ships an
+  "RTBTCore" (v2) image that this kernel's btrtl.c cannot parse.
+- zd1211/*: not in linux-firmware; from the same NetHunter module
+  (zd1211-firmware, GPL-2.0).
+
+Licences: LICENSES/ (texts from linux-firmware), per its WHENCE file:
+  rtl_bt/*, rtlwifi/*, rtw88/*     LICENCE.rtlwifi_firmware.txt
+  ath9k_htc/*, htc_*.fw            LICENCE.open-ath9k-htc-firmware, LICENCE.atheros_firmware
+  carl9170-1.fw, zd1211/*          GPL-2.0
+  mt7601u.bin                      LICENCE.ralink_a_mediatek_company_firmware
+  mediatek/*                       LICENCE.mediatek
+  rt2870.bin, rt73.bin             LICENCE.ralink-firmware.txt
