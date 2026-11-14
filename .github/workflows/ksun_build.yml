@@ -1,4 +1,4 @@
-name: KernelSU Next Kernel Build
+name: Levion Kernel Build
 
 on:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ksu-release
-          name: Levion Kernel KsuN Build
+          name: Levion Kernel
           files: ${{ env.zip_file }}
           body_path: .github/release_notes.txt
         env:
