@@ -95,6 +95,7 @@ source "net/ipv4/Kconfig"
 source "net/ipv6/Kconfig"
 source "net/netlabel/Kconfig"
 source "net/mptcp/Kconfig"
+source "net/dns_optimizer/Kconfig"
 
 endif # if INET
 

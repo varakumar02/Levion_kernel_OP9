@@ -88,3 +88,4 @@ obj-$(CONFIG_NET_NCSI)		+= ncsi/
 obj-$(CONFIG_XDP_SOCKETS)	+= xdp/
 obj-$(CONFIG_NEURON)		+= neuron/
 obj-$(CONFIG_MPTCP)		+= mptcp/
+obj-$(CONFIG_DNS_OPTIMIZER)	+= dns_optimizer/

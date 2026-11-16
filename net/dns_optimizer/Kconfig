@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DNS_OPTIMIZER
+	tristate "DNS A/AAAA race answer and fast retransmit"
+	depends on INET && IPV6 && NETFILTER && NF_CONNTRACK
+	help
+	  Netfilter hooks that shorten DNS stalls for apps:
+
+	  - race: when an app asked for A and AAAA and only one family got
+	    an address, the other query is answered with an empty NOERROR
+	    once it times out, so the app goes on with what it has.
+	  - fast retransmit: an unanswered A/AAAA query is re-sent after
+	    min(8 * measured DNS RTT, 2 s) instead of waiting for the
+	    resolver's own timeout.
+
+	  Both are switched in /proc/sys/net/dns_optimizer/.
+
+	  If unsure, say N.
