@@ -41,6 +41,15 @@ unsigned long topology_get_max_freq_scale(struct sched_domain *sd, int cpu)
 	return per_cpu(max_freq_scale, cpu);
 }
 
+DECLARE_PER_CPU(unsigned long, min_freq_capacity);
+
+/* Capacity of @cpu at its cpufreq policy's minimum frequency */
+static inline
+unsigned long topology_get_min_freq_capacity(int cpu)
+{
+	return per_cpu(min_freq_capacity, cpu);
+}
+
 struct cpu_topology {
 	int thread_id;
 	int core_id;

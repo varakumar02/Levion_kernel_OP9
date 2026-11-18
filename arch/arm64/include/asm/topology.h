@@ -22,6 +22,9 @@ int pcibus_to_node(struct pci_bus *bus);
 /* Replace task scheduler's default max-frequency-invariant accounting */
 #define arch_scale_max_freq_capacity topology_get_max_freq_scale
 
+/* Capacity at the cpufreq policy's minimum frequency */
+#define arch_scale_min_freq_capacity topology_get_min_freq_capacity
+
 /* Replace task scheduler's default cpu-invariant accounting */
 #define arch_scale_cpu_capacity topology_get_cpu_scale
 
