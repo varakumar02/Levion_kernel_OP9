@@ -101,6 +101,17 @@ bool cass_prime_cpu(const struct cass_cpu_cand *c)
 	       arch_scale_cpu_capacity(nr_cpu_ids - 2) != SCHED_CAPACITY_SCALE;
 }
 
+/*
+ * Returns true if @cpu counts as idle for @p: it's idle, or it only runs
+ * SCHED_IDLE tasks and @p isn't one (a SCHED_IDLE @p would share it equally).
+ */
+static __always_inline
+bool cass_idle_cpu(int cpu, struct task_struct *p)
+{
+	return available_idle_cpu(cpu) ||
+	       (sched_idle_cpu(cpu) && !task_has_idle_policy(p));
+}
+
 /* Returns true if @a is a better CPU than @b */
 static __always_inline
 bool cass_cpu_better(const struct cass_cpu_cand *a,
@@ -273,20 +284,8 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 		 * only running task.
 		 */
 		curr->cpu = cpu;
-#ifdef CONFIG_SCHED_WALT
 		if ((sync && cpu == this_cpu && rq->nr_running == 1) ||
-		    available_idle_cpu(cpu) || sched_idle_cpu(cpu)) {
-			if (!uc_min && !cass_prime_cpu(curr)) {
-				/* Discard any previous non-idle candidate */
-				if (!has_idle) {
-					best = curr;
-					nr_cands = 1;
-				}
-				has_idle = true;
-			}
-#else
-		if ((sync && cpu == this_cpu && rq->nr_running == 1) ||
-		    choose_idle_cpu(cpu, p)) {
+		    cass_idle_cpu(cpu, p)) {
 			/*
 			 * A non-idle candidate may be better for energy
 			 * efficiency when @p is uclamp boosted above @curr's
@@ -302,7 +301,6 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 				nr_cands = 1;
 				has_idle = true;
 			}
-#endif
 
 			/* Nonzero exit latency indicates this CPU is idle */
 			curr->exit_lat = 1;
