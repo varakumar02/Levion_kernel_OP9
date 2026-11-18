@@ -3598,6 +3598,13 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 	prepare_arch_switch(next);
 }
 
+static void mmdrop_async_free(struct work_struct *work)
+{
+	struct mm_struct *mm = container_of(work, typeof(*mm), async_put_work);
+
+	__mmdrop(mm);
+}
+
 /**
  * finish_task_switch - clean up after a task-switch
  * @prev: the thread we just switched away from.
@@ -3676,7 +3683,16 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 	 */
 	if (mm) {
 		membarrier_mm_sync_core_before_usermode(mm);
-		mmdrop(mm);
+		/*
+		 * The last reference frees the mm from a workqueue instead of the
+		 * context switch. async_put_work is free to reuse here: only the
+		 * holder of the last mm_count reference queues it, and the
+		 * mmput_async() work drops its own reference as its last step.
+		 */
+		if (atomic_dec_and_test(&mm->mm_count)) {
+			INIT_WORK(&mm->async_put_work, mmdrop_async_free);
+			queue_work(system_unbound_wq, &mm->async_put_work);
+		}
 	}
 	if (unlikely(prev_state == TASK_DEAD)) {
 		if (prev->sched_class->task_dead)
