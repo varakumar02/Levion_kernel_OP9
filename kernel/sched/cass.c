@@ -25,6 +25,8 @@
  * satisfy the overall load at any given moment.
  */
 
+#include <linux/prandom.h>
+
 struct cass_cpu_cand {
 	int cpu;
 	unsigned int exit_lat;
@@ -103,7 +105,8 @@ bool cass_prime_cpu(const struct cass_cpu_cand *c)
 static __always_inline
 bool cass_cpu_better(const struct cass_cpu_cand *a,
 		     const struct cass_cpu_cand *b, unsigned long p_util,
-		     int this_cpu, int prev_cpu, int prev_llc_id, bool sync)
+		     int this_cpu, int prev_cpu, int prev_llc_id, bool sync,
+		     unsigned int *nr_cands)
 {
 #define cass_cmp(a, b) ({ res = (a) - (b); })
 #define cass_eq(a, b) ({ res = (a) == (b); })
@@ -142,8 +145,15 @@ bool cass_cpu_better(const struct cass_cpu_cand *a,
 		goto done;
 
 	/* Prefer the current CPU for sync wakes */
-	if (sync && (cass_eq(a->cpu, this_cpu) || !cass_cmp(b->cpu, this_cpu)))
-		goto done;
+	if (sync) {
+		if (cass_eq(a->cpu, this_cpu))
+			goto done;
+		if (b->cpu == this_cpu) {
+			/* @b wins; don't leave @res at 0, that means a tie */
+			res = -1;
+			goto done;
+		}
+	}
 
 	/* Prefer the CPU with higher capacity */
 	if (cass_cmp(a->cap, b->cap))
@@ -154,25 +164,43 @@ bool cass_cpu_better(const struct cass_cpu_cand *a,
 		goto done;
 
 	/* Prefer the previous CPU */
-	if (cass_eq(a->cpu, prev_cpu) || !cass_cmp(b->cpu, prev_cpu))
+	if (cass_eq(a->cpu, prev_cpu))
 		goto done;
+	if (b->cpu == prev_cpu) {
+		/* @b wins; don't leave @res at 0, that means a tie */
+		res = -1;
+		goto done;
+	}
 
 	/*
 	 * Prefer the CPU that shares a cache with the previous CPU.
 	 *
 	 * prev_llc_id is negative when all CPUs share the same LLC (DynamIQ)
 	 * or when sched domains are torn down. In both cases, sd_llc_id cannot
-	 * differentiate candidates. So, we skip it.
+	 * differentiate candidates, so the check is skipped and @res is reset:
+	 * it still holds the result of the previous CPU check above.
 	 */
-	if (prev_llc_id >= 0 &&
-	    cass_cmp(per_cpu(sd_llc_id, a->cpu) == prev_llc_id,
-		     per_cpu(sd_llc_id, b->cpu) == prev_llc_id))
-		goto done;
+	if (prev_llc_id >= 0) {
+		if (cass_cmp(per_cpu(sd_llc_id, a->cpu) == prev_llc_id,
+			     per_cpu(sd_llc_id, b->cpu) == prev_llc_id))
+			goto done;
+	} else {
+		res = 0;
+	}
 
-	/* @a isn't a better CPU than @b. @res must be <=0 to indicate such. */
+	/* @a and @b are tied if @res is 0, @b is better if @res is negative */
 done:
-	/* @a is a better CPU than @b if @res is positive */
-	return res > 0;
+	/* @a is strictly better: it becomes the only candidate so far */
+	if (res > 0) {
+		*nr_cands = 1;
+		return true;
+	}
+
+	/* Perfect tie: reservoir sampling gives each tied CPU a 1/N chance */
+	if (!res && !reciprocal_scale(prandom_u32(), ++(*nr_cands)))
+		return true;
+
+	return false;
 }
 
 static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt)
@@ -180,6 +208,7 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 	/* Initialize @best such that @best always has a valid CPU at the end */
 	struct cass_cpu_cand cands[2], *best = cands;
 	int this_cpu = raw_smp_processor_id();
+	unsigned int nr_cands = 1;
 	unsigned long p_util, uc_min;
 	bool has_idle = false;
 	int cidx = 0, cpu, prev_llc_id;
@@ -249,8 +278,10 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 		    available_idle_cpu(cpu) || sched_idle_cpu(cpu)) {
 			if (!uc_min && !cass_prime_cpu(curr)) {
 				/* Discard any previous non-idle candidate */
-				if (!has_idle)
+				if (!has_idle) {
 					best = curr;
+					nr_cands = 1;
+				}
 				has_idle = true;
 			}
 #else
@@ -268,6 +299,7 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 			    !cass_prime_cpu(curr)) {
 				/* Discard any previous non-idle candidate */
 				best = curr;
+				nr_cands = 1;
 				has_idle = true;
 			}
 #endif
@@ -335,7 +367,7 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 		 */
 		if (best == curr ||
 		    cass_cpu_better(curr, best, p_util, this_cpu, prev_cpu,
-				    prev_llc_id, sync)) {
+				    prev_llc_id, sync, &nr_cands)) {
 			best = curr;
 			cidx ^= 1;
 		}
