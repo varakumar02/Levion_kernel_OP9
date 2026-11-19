@@ -1209,22 +1209,24 @@ DECLARE_RWSEM(uts_sem);
 #define override_architecture(name)	0
 #endif
 
-static void override_custom_release(char __user *release, size_t len)
+static int override_custom_release(char __user *release, size_t len)
 {
+	int ret = 0;
 #ifdef CONFIG_UNAME_OVERRIDE
 	char *buf;
 
 	buf = kstrdup_quotable_cmdline(current, GFP_KERNEL);
 	if (buf == NULL)
-		return;
+		return 0;
 
-	if (strstr(buf, CONFIG_UNAME_OVERRIDE_TARGET)) {
-		copy_to_user(release, CONFIG_UNAME_OVERRIDE_STRING,
-			       strlen(CONFIG_UNAME_OVERRIDE_STRING) + 1);
-	}
+	if (strstr(buf, CONFIG_UNAME_OVERRIDE_TARGET) &&
+	    copy_to_user(release, CONFIG_UNAME_OVERRIDE_STRING,
+			 strlen(CONFIG_UNAME_OVERRIDE_STRING) + 1))
+		ret = -EFAULT;
 
 	kfree(buf);
 #endif
+	return ret;
 }
 
 /*
@@ -1285,7 +1287,8 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 	if (copy_to_user(name, &tmp, sizeof(tmp)))
 		return -EFAULT;
 
-	override_custom_release(name->release, sizeof(name->release));
+	if (override_custom_release(name->release, sizeof(name->release)))
+		return -EFAULT;
 	if (override_release(name->release, sizeof(name->release)))
 		return -EFAULT;
 	if (override_architecture(name))
@@ -1310,7 +1313,8 @@ SYSCALL_DEFINE1(uname, struct old_utsname __user *, name)
 	if (copy_to_user(name, &tmp, sizeof(tmp)))
 		return -EFAULT;
 
-	override_custom_release(name->release, sizeof(name->release));
+	if (override_custom_release(name->release, sizeof(name->release)))
+		return -EFAULT;
 	if (override_release(name->release, sizeof(name->release)))
 		return -EFAULT;
 	if (override_architecture(name))
