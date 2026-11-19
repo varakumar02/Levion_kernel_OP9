@@ -30,7 +30,6 @@ bool events_fifo_has_data(void)
 void push_event(uid_t uid, u8 action, u8 ip_ver, const char *domain)
 {
 	struct stealth_event ev;
-	struct stealth_event dropped;
 	int ev_len = sizeof(ev);
 	int dom_len = sizeof(ev.domain);
 	bool pushed;
@@ -45,7 +44,7 @@ void push_event(uid_t uid, u8 action, u8 ip_ver, const char *domain)
 	spin_lock_bh(&fifo_lock);
 	pushed = kfifo_put(&events_fifo, ev);
 	if (unlikely(!pushed)) {
-		kfifo_get(&events_fifo, &dropped);
+		kfifo_skip(&events_fifo);
 		pushed = kfifo_put(&events_fifo, ev);
 	}
 	spin_unlock_bh(&fifo_lock);
