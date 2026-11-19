@@ -470,7 +470,7 @@ static int skip_quic_token_frame(const u8 **buf, const u8 *end)
 
 static int skip_quic_new_cid_frame(const u8 **buf, const u8 *end)
 {
-	u64 dummy, cid_len;
+	u64 cid_len;
 
 	if (skip_quic_vints(buf, end, 2) < 0)
 		return -EINVAL;
