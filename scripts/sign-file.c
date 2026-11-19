@@ -99,6 +99,7 @@ static void display_openssl_errors(int l)
 	}
 }
 
+#ifndef OPENSSL_NO_ENGINE
 static void drain_openssl_errors(void)
 {
 	const char *file;
@@ -108,6 +109,7 @@ static void drain_openssl_errors(void)
 		return;
 	while (ERR_get_error_line(&file, &line)) {}
 }
+#endif
 
 #define ERR(cond, fmt, ...)				\
 	do {						\
@@ -144,6 +146,10 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
 	EVP_PKEY *private_key;
 
 	if (!strncmp(private_key_name, "pkcs11:", 7)) {
+#ifdef OPENSSL_NO_ENGINE
+		ERR(1, "This OpenSSL has no ENGINE support for PKCS#11 keys");
+		exit(1);
+#else
 		ENGINE *e;
 
 		ENGINE_load_builtin_engines();
@@ -159,6 +165,7 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
 			    "Set PKCS#11 PIN");
 		private_key = ENGINE_load_private_key(e, private_key_name,
 						      NULL, NULL);
+#endif
 		ERR(!private_key, "%s", private_key_name);
 	} else {
 		BIO *b;
