@@ -38,11 +38,24 @@ void bb_cred_transfer(struct cred *new, const struct cred *old)
 	*tsec = *old_tsec;
 }
 
+static void bbg_resolve_sid(const char *ctx, int *sid)
+{
+	u32 secid;
+
+	if (*sid >= 0)
+		return;
+	if (!security_secctx_to_secid(ctx, strlen(ctx), &secid))
+		WRITE_ONCE(*sid, secid);
+	else
+		WRITE_ONCE(*sid, -EINVAL);
+}
+
 int bb_bprm_set_creds(struct linux_binprm *bprm)
 {
 	static int su_sid = -1;
 	static int magisk_sid = -1;
 	static int ksu_sid = -1;
+	static u32 lookup_seqno = (u32)-1;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
 	struct task_security_struct *new_selinux_tsec;
 	const struct task_security_struct *old_selinux_tsec;
@@ -66,23 +79,18 @@ int bb_bprm_set_creds(struct linux_binprm *bprm)
 
 	if (unlikely(!selinux_initialized_compat())) return 0; // we keep this only for module scripts, i don't want hook execve
 
-	if (su_sid == -1) { // root impl compatible
-		if (security_secctx_to_secid("u:r:su:s0", strlen("u:r:su:s0"), &su_sid)) {
-			su_sid = -EINVAL;
-		}
+	/*
+	 * Resolve the root domains, and again whenever the policy changes while one
+	 * is still missing: KernelSU adds u:r:ksu:s0 to the policy at runtime, after
+	 * the first exec has already run this lookup.
+	 */
+	if ((su_sid < 0 || magisk_sid < 0 || ksu_sid < 0) &&
+	    bbg_policy_seqno() != lookup_seqno) {
+		lookup_seqno = bbg_policy_seqno();
+		bbg_resolve_sid("u:r:su:s0", &su_sid);
+		bbg_resolve_sid("u:r:magisk:s0", &magisk_sid);
+		bbg_resolve_sid("u:r:ksu:s0", &ksu_sid);
 	}
-
-	if (magisk_sid == -1) {
-		if (security_secctx_to_secid("u:r:magisk:s0", strlen("u:r:magisk:s0"), &magisk_sid) != 0) {
-			magisk_sid = -EINVAL;
-		}
-	}
-
-	if (ksu_sid == -1) {
-                if (security_secctx_to_secid("u:r:ksu:s0", strlen("u:r:ksu:s0"), &ksu_sid) != 0) {
-                        ksu_sid = -EINVAL;
-                }
-        }
 
 	if (unlikely(
 		old_selinux_tsec->sid == su_sid || old_selinux_tsec->osid == su_sid || // kernelsu old

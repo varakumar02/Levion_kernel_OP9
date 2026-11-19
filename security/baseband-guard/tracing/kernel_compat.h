@@ -2,11 +2,24 @@
 #include <linux/cred.h>
 #include "objsec.h"
 #include "security.h"
+#include "avc.h"
 #include "tracing.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,17,0)
 #include "avc_ss.h"
 #endif
+
+/* bumped on every policy load, and by KernelSU's runtime policy patch */
+static __maybe_unused inline u32 bbg_policy_seqno(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,4,0)
+    return avc_policy_seqno();
+#elif defined(BB_HAS_SELINUX_STATE)
+    return avc_policy_seqno(&selinux_state);
+#else
+    return 0;
+#endif
+}
 
 static __maybe_unused inline bool selinux_initialized_compat(void)
 {
