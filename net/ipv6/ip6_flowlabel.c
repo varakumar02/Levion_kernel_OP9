@@ -721,9 +721,6 @@ done:
 
 int ipv6_flowlabel_opt(struct sock *sk, sockptr_t optval, int optlen)
 {
-	int err;
-	struct net *net = sock_net(sk);
-	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct in6_flowlabel_req freq;
 
 	if (optlen < sizeof(freq))
