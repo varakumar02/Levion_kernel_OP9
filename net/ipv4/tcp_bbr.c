@@ -101,6 +101,13 @@ enum bbr_ack_phase {
 	BBR_ACKS_PROBE_STOPPING,  /* stopped probing; still getting feedback */
 };
 
+/* What to do when a loss recovery episode is undone as spurious: */
+enum bbr_undo_state {
+	BBR_UNDO_NONE,		/* upon undo, no mode change needed */
+	BBR_UNDO_STARTUP,	/* upon undo, return to BBR_STARTUP */
+	BBR_UNDO_PROBE_BW_UP,	/* upon undo, return to BBR_BW_PROBE_UP */
+};
+
 /* BBR congestion control block */
 struct bbr {
 	u32	min_rtt_us;	        /* min RTT in min_rtt_win_sec window */
@@ -119,14 +126,17 @@ struct bbr {
 		idle_restart:1,	     /* restarting after idle? */
 		probe_rtt_round_done:1,  /* a BBR_PROBE_RTT round at 4 pkts? */
 		init_cwnd:7,         /* initial cwnd */
-		unused_1:10;
+		drain_rounds:3,      /* rounds spent in DRAIN */
+		unused_1:7;
 	u32	pacing_gain:10,	/* current gain for setting pacing rate */
 		cwnd_gain:10,	/* current gain for setting cwnd */
 		full_bw_reached:1,   /* reached full bw in Startup? */
 		full_bw_cnt:2,	/* number of rounds without large bw gains */
 		cycle_idx:2,	/* current index in pacing_gain cycle array */
 		has_seen_rtt:1, /* have we seen an RTT sample yet? */
-		unused_2:6;
+		undo_state:2,	/* bbr_undo_state enum from loss */
+		loss_yet_in_recovery:1, /* loss yet in CA_Loss/CA_Recovery? */
+		unused_2:3;
 	u32	prior_cwnd;	/* prior cwnd upon entering loss recovery */
 	u32	full_bw;	/* recent bw, to estimate if pipe is full */
 
@@ -214,10 +224,12 @@ static const int bbr_pacing_margin_percent = 1;
 static const int bbr_startup_pacing_gain = BBR_UNIT * 277 / 100 + 1;
 /* The gain for deriving startup cwnd: */
 static const int bbr_startup_cwnd_gain = BBR_UNIT * 2;
-/* The pacing gain in BBR_DRAIN is calculated to typically drain
- * the queue created in BBR_STARTUP in a single round:
+/* The pacing gain in BBR_DRAIN: drain the queue created in BBR_STARTUP gently,
+ * bounded by bbr_max_drain_rounds:
  */
-static const int bbr_drain_gain = BBR_UNIT * 1000 / 2885;
+static const int bbr_drain_gain = BBR_UNIT * 1 / 2;
+/* Maximum number of packet-timed round trips spent in DRAIN mode. */
+static const u32 bbr_max_drain_rounds = 3;
 /* The gain for deriving steady-state cwnd tolerates delayed/stretched ACKs: */
 static const int bbr_cwnd_gain  = BBR_UNIT * 2;
 /* The pacing_gain values for the PROBE_BW gain cycle, to discover/share bw: */
@@ -1194,6 +1206,17 @@ static bool bbr_is_inflight_too_high(const struct sock *sk,
 	return false;
 }
 
+/* Is the loss rate in this sample above the threshold? (bbr_is_inflight_too_high()
+ * also fires on ECN; only loss can later be undone as spurious.)
+ */
+static bool bbr_is_loss_too_high(const struct sock *sk,
+				 const struct rate_sample *rs)
+{
+	return rs->lost > 0 && rs->tx_in_flight &&
+	       rs->lost > ((u64)rs->tx_in_flight *
+			   bbr_param(sk, loss_thresh) >> BBR_SCALE);
+}
+
 /* Calculate the tx_in_flight level that corresponded to excessive loss.
  * We find "lost_prefix" segs of the skb where loss rate went too high,
  * by solving for "lost_prefix" in the following equation:
@@ -1642,8 +1665,11 @@ static void bbr_handle_inflight_too_high(struct sock *sk,
 					 (u64)bbr_target_inflight(sk) *
 					 (BBR_UNIT - beta) >> BBR_SCALE);
 	}
-	if (bbr->mode == BBR_PROBE_BW && bbr->cycle_idx == BBR_BW_PROBE_UP)
+	if (bbr->mode == BBR_PROBE_BW && bbr->cycle_idx == BBR_BW_PROBE_UP) {
+		if (bbr_is_loss_too_high(sk, rs))
+			bbr->undo_state = BBR_UNDO_PROBE_BW_UP;
 		bbr_start_bw_probe_down(sk);
+	}
 }
 
 /* If we're seeing bw and loss samples reflecting our bw probing, adapt
@@ -1905,6 +1931,8 @@ static void bbr_check_loss_too_high_in_startup(struct sock *sk,
 	    inet_csk(sk)->icsk_ca_state == TCP_CA_Recovery &&
 	    bbr->loss_events_in_round >= bbr_param(sk, full_loss_cnt) &&
 	    bbr_is_inflight_too_high(sk, rs)) {
+		if (bbr_is_loss_too_high(sk, rs))
+			bbr->undo_state = BBR_UNDO_STARTUP;
 		bbr_handle_queue_too_high_in_startup(sk);
 		return;
 	}
@@ -1953,6 +1981,7 @@ static void bbr_check_drain(struct sock *sk, const struct rate_sample *rs,
 
 	if (bbr->mode == BBR_STARTUP && bbr_full_bw_reached(sk)) {
 		bbr->mode = BBR_DRAIN;	/* drain queue we created */
+		bbr->drain_rounds = 0;
 		/* Set ssthresh to export purely for monitoring, to signal
 		 * completion of initial STARTUP by setting to a non-
 		 * TCP_INFINITE_SSTHRESH value (ssthresh is not used by BBR).
@@ -1961,11 +1990,17 @@ static void bbr_check_drain(struct sock *sk, const struct rate_sample *rs,
 				bbr_inflight(sk, bbr_max_bw(sk), BBR_UNIT);
 		bbr_reset_congestion_signals(sk);
 	}	/* fall through to check if in-flight is already small: */
-	if (bbr->mode == BBR_DRAIN &&
-	    bbr_packets_in_net_at_edt(sk, tcp_packets_in_flight(tcp_sk(sk))) <=
-	    bbr_inflight(sk, bbr_max_bw(sk), BBR_UNIT)) {
-		bbr->mode = BBR_PROBE_BW;
-		bbr_start_bw_probe_down(sk);
+	if (bbr->mode == BBR_DRAIN) {
+		if (bbr->round_start && bbr->drain_rounds < 7)
+			bbr->drain_rounds++;
+		if (bbr_packets_in_net_at_edt(sk,
+			tcp_packets_in_flight(tcp_sk(sk))) <=
+		    bbr_inflight(sk, bbr_max_bw(sk), BBR_UNIT) ||
+		    unlikely(bbr->drain_rounds >
+			     bbr_param(sk, max_drain_rounds))) {
+			bbr->mode = BBR_PROBE_BW;
+			bbr_start_bw_probe_down(sk);
+		}
 	}
 }
 
@@ -2125,6 +2160,9 @@ static void bbr_init(struct sock *sk)
 	bbr->undo_bw_lo = 0;
 	bbr->undo_inflight_lo = 0;
 	bbr->undo_inflight_hi = 0;
+	bbr->undo_state = BBR_UNDO_NONE;
+	bbr->loss_yet_in_recovery = 0;
+	bbr->drain_rounds = 0;
 	bbr->loss_events_in_round = 0;
 	bbr->startup_ecn_rounds = 0;
 	bbr_reset_congestion_signals(sk);
@@ -2171,6 +2209,8 @@ static void bbr_note_loss(struct sock *sk)
 }
 
 /* Core TCP stack informs us that the given skb was just marked lost. */
+static void bbr_save_for_later_undo(struct sock *sk);
+
 static void bbr_skb_marked_lost(struct sock *sk,
 					    const struct sk_buff *skb)
 {
@@ -2178,6 +2218,14 @@ static void bbr_skb_marked_lost(struct sock *sk,
 	struct bbr *bbr = inet_csk_ca(sk);
 	struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 	struct rate_sample rs = {};
+
+	/* If this is the first loss in a recovery episode, save state before
+	 * processing it, in case the episode is later declared spurious.
+	 */
+	if (!bbr->loss_yet_in_recovery) {
+		bbr->loss_yet_in_recovery = 1;
+		bbr_save_for_later_undo(sk);
+	}
 
 	bbr_note_loss(sk);
 
@@ -2222,21 +2270,47 @@ static void bbr_run_loss_probe_recovery(struct sock *sk)
 /* Revert short-term model if current loss recovery event was spurious. */
 static u32 bbr_undo_cwnd(struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = inet_csk_ca(sk);
 
 	bbr_reset_full_bw(sk); /* spurious slow-down; reset full bw detector */
 	bbr->loss_in_round = 0;
+	bbr->loss_events_in_round = 0;
+	bbr->loss_round_start = 0;
+	bbr->loss_round_delivered = tp->delivered;
 
 	/* Revert to cwnd and other state saved before loss episode. */
 	bbr->bw_lo = max(bbr->bw_lo, bbr->undo_bw_lo);
 	bbr->inflight_lo = max(bbr->inflight_lo, bbr->undo_inflight_lo);
 	bbr->inflight_hi = max(bbr->inflight_hi, bbr->undo_inflight_hi);
 	bbr->try_fast_path = 0;  /* take slow path to set proper cwnd, pacing */
-	return bbr->prior_cwnd;
+
+	/* Go back to the phase the spurious loss pulled us out of. */
+	if (bbr->undo_state == BBR_UNDO_STARTUP &&
+	    bbr->mode != BBR_STARTUP) {
+		bbr->full_bw_reached = 0;
+		if (bbr->mode != BBR_PROBE_RTT)
+			bbr_reset_startup_mode(sk);
+	} else if (bbr->undo_state == BBR_UNDO_PROBE_BW_UP &&
+		   !(bbr->mode == BBR_PROBE_BW &&
+		     bbr->cycle_idx == BBR_BW_PROBE_UP)) {
+		if (bbr->mode != BBR_PROBE_RTT) {
+			bbr->mode = BBR_PROBE_BW;
+			bbr_start_bw_probe_refill(sk, 0);
+		}
+	}
+	bbr->undo_state = BBR_UNDO_NONE;
+
+	/* Restore cwnd so it's at least as big as it was before recovery;
+	 * the next bbr_main() bounds it by the model again.
+	 */
+	return max(tcp_snd_cwnd(tp), bbr->prior_cwnd);
 }
 
-/* Entering loss recovery, so save state for when we undo recovery. */
-static u32 bbr_ssthresh(struct sock *sk)
+/* Save state before the first loss of a recovery episode, so a spurious
+ * episode can be undone.
+ */
+static void bbr_save_for_later_undo(struct sock *sk)
 {
 	struct bbr *bbr = inet_csk_ca(sk);
 
@@ -2245,6 +2319,21 @@ static u32 bbr_ssthresh(struct sock *sk)
 	bbr->undo_bw_lo		= bbr->bw_lo;
 	bbr->undo_inflight_lo	= bbr->inflight_lo;
 	bbr->undo_inflight_hi	= bbr->inflight_hi;
+	bbr->undo_state		= BBR_UNDO_NONE;  /* set later if relevant */
+}
+
+/* Entering loss recovery. The undo state was saved at the first lost skb,
+ * because tcp_enter_loss() and SACK processing mark skbs lost (and so
+ * update inflight_hi) before they call ssthresh().
+ */
+static u32 bbr_ssthresh(struct sock *sk)
+{
+	struct bbr *bbr = inet_csk_ca(sk);
+
+	if (!bbr->loss_yet_in_recovery) {	/* no lost skb seen yet */
+		bbr->loss_yet_in_recovery = 1;
+		bbr_save_for_later_undo(sk);
+	}
 	return tcp_sk(sk)->snd_ssthresh;
 }
 
@@ -2314,6 +2403,9 @@ static void bbr_set_state(struct sock *sk, u8 new_state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = inet_csk_ca(sk);
+
+	if (new_state < TCP_CA_Recovery)
+		bbr->loss_yet_in_recovery = 0;
 
 	if (new_state == TCP_CA_Loss) {
 
