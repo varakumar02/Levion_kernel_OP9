@@ -882,8 +882,8 @@ static bool adios_bio_merge(struct request_queue *q, struct bio *bio,
 }
 
 static bool merge_or_insert_to_dl_tree(struct adios_data *ad,
-		struct request *rq, struct request_queue *q) {
-	if (blk_mq_sched_try_insert_merge(q, rq))
+		struct request *rq, struct request_queue *q, struct list_head *free) {
+	if (blk_mq_sched_try_insert_merge(q, rq, free))
 		return true;
 
 	bool dl_idx = adios_optype_not_read(rq);
@@ -922,7 +922,7 @@ static void insert_to_prio_queue(struct adios_data *ad,
 
 // Insert a request into the scheduler (after Read & Write models stabilized)
 static void insert_request_post_stability(struct blk_mq_hw_ctx *hctx,
-		struct request *rq, bool at_head) {
+		struct request *rq, bool at_head, struct list_head *free) {
 	struct request_queue *q = hctx->queue;
 	struct adios_data *ad = q->elevator->elevator_data;
 	struct adios_rq_data *rd = get_rq_data(rq);
@@ -941,7 +941,7 @@ static void insert_request_post_stability(struct blk_mq_hw_ctx *hctx,
 		return;
 	}
 
-	if (merge_or_insert_to_dl_tree(ad, rq, q))
+	if (merge_or_insert_to_dl_tree(ad, rq, q, free))
 		return;
 }
 
@@ -983,6 +983,7 @@ static void adios_insert_requests(struct blk_mq_hw_ctx *hctx,
 	unsigned long flags;
 	bool stop = false;
 	int i;
+	LIST_HEAD(free);
 
 	do {
 	spin_lock_irqsave(&ad->lock, flags);
@@ -994,12 +995,14 @@ static void adios_insert_requests(struct blk_mq_hw_ctx *hctx,
 		rq = list_first_entry(list, struct request, queuelist);
 		list_del_init(&rq->queuelist);
 		if (likely(ad->models_stable))
-			insert_request_post_stability(hctx, rq, at_head);
+			insert_request_post_stability(hctx, rq, at_head, &free);
 		else
 			insert_request_pre_stability(hctx, rq, at_head);
 	}
 	spin_unlock_irqrestore(&ad->lock, flags);
 	} while (!stop);
+
+	blk_mq_free_requests(&free);
 }
 
 // Prepare a request before it is inserted into the scheduler
