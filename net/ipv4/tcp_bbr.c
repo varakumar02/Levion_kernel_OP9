@@ -969,8 +969,8 @@ static void bbr_update_gains(struct sock *sk)
 		bbr->cwnd_gain	 = bbr_param(sk, cwnd_gain);
 		if (bbr_param_enabled(sk, bw_probe_cwnd_gain) &&
 		    bbr->cycle_idx == BBR_BW_PROBE_UP)
-			bbr->cwnd_gain +=
-				BBR_UNIT * bbr_param(sk, bw_probe_cwnd_gain) / 4;
+			bbr->cwnd_gain = min_t(u32, 0x3FF, bbr->cwnd_gain +
+				BBR_UNIT * bbr_param(sk, bw_probe_cwnd_gain) / 4);
 		break;
 	case BBR_PROBE_RTT:
 		bbr->pacing_gain = BBR_UNIT;
@@ -2075,6 +2075,9 @@ static void bbr_main(struct sock *sk, const struct rate_sample *rs)
 	bool update_model = true;
 	u32 bw, round_delivered;
 	int ce_ratio = -1;
+
+	if (unlikely(!bbr->initialized))  /* we can be called before CC init */
+		return;
 
 	round_delivered = bbr_update_round_start(sk, rs, &ctx);
 	if (bbr->round_start) {
