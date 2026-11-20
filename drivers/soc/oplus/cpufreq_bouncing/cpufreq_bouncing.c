@@ -443,10 +443,12 @@ static void cb_parse_cpufreq(void)
 		++cb_pol_idx;
 	}
 
-	for (i = 0; i < nr_cpu_ids && valid; ++i) {
+	/* nr_cpu_ids can exceed the CPUs that exist (NR_CPUS=32 here); check those only */
+	for_each_possible_cpu(i) {
 		if (!per_cpu(cbs, i)) {
 			pr_warn("break on cpu%d\n", i);
 			valid = false;
+			break;
 		}
 	}
 
