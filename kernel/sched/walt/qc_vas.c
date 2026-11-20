@@ -5,6 +5,7 @@
 #include <linux/irq.h>
 #include <linux/delay.h>
 #include <trace/events/sched.h>
+#include <linux/cpufreq_bouncing/cpufreq_bouncing.h>
 
 #include "qc_vas.h"
 
@@ -660,6 +661,7 @@ int sched_isolate_cpu(int cpu)
 	calc_load_migrate(rq);
 	update_max_interval();
 	sched_update_group_capacities(cpu);
+	cb_reset(cpu, start_time);
 
 out:
 	cpu_maps_update_done();
@@ -687,6 +689,8 @@ int sched_unisolate_cpu_unlocked(int cpu)
 
 	if (trace_sched_isolate_enabled())
 		start_time = sched_clock();
+
+	cb_reset(cpu, start_time);
 
 	if (!cpu_isolation_vote[cpu]) {
 		ret_code = -EINVAL;

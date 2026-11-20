@@ -31,6 +31,7 @@
 #include <linux/tick.h>
 #include <linux/sched/sysctl.h>
 #include <trace/events/power.h>
+#include <linux/cpufreq_bouncing/cpufreq_bouncing.h>
 
 static LIST_HEAD(cpufreq_policy_list);
 
@@ -549,6 +550,7 @@ EXPORT_SYMBOL_GPL(cpufreq_disable_fast_switch);
 unsigned int cpufreq_driver_resolve_freq(struct cpufreq_policy *policy,
 					 unsigned int target_freq)
 {
+	target_freq = cb_cap(policy, target_freq);
 	target_freq = clamp_val(target_freq, policy->min, policy->max);
 	policy->cached_target_freq = target_freq;
 
@@ -2109,6 +2111,7 @@ unsigned int cpufreq_driver_fast_switch(struct cpufreq_policy *policy,
 {
 	int ret;
 
+	target_freq = cb_cap(policy, target_freq);
 	target_freq = clamp_val(target_freq, policy->min, policy->max);
 
 	ret = cpufreq_driver->fast_switch(policy, target_freq);

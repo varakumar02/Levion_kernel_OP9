@@ -14,6 +14,7 @@
 #include <trace/events/power.h>
 #include <linux/sched/sysctl.h>
 #include <trace/hooks/sched.h>
+#include <linux/cpufreq_bouncing/cpufreq_bouncing.h>
 
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
 
@@ -657,6 +658,8 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	bool busy;
 	unsigned int cached_freq = sg_policy->cached_raw_freq;
 
+	cb_update(sg_policy->policy, time);
+
 	if (!sg_policy->tunables->pl && flags & SCHED_CPUFREQ_PL)
 		return;
 
@@ -780,6 +783,9 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
 	unsigned long hs_util, boost_util;
 	unsigned int next_f;
+
+	if (!(flags & SCHED_CPUFREQ_CONTINUE))
+		cb_update(sg_policy->policy, time);
 
 	if (!sg_policy->tunables->pl && flags & SCHED_CPUFREQ_PL)
 		return;
