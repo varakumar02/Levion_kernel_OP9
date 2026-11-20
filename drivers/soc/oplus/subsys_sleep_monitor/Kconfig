@@ -1,0 +1,7 @@
+config OPLUS_SUBSYS_SLEEP_MONITOR
+	tristate "OPLUS subsystem sleep monitor"
+	depends on QCOM_SMEM
+	help
+	  /proc/subsys_sleepmon/{adsp,cdsp,slpi}[_compact]: why each DSP is not
+	  sleeping (XO, latency and LPR voters, active threads), read from the
+	  sleep statistics the DSP firmware publishes in SMEM items 590/591.

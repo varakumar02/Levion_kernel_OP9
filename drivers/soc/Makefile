@@ -42,3 +42,4 @@ obj-$(CONFIG_OPLUS_DEVICE_IFNO)  +=  oplus/device_info/
 obj-y += oplus/misc/
 #endif /* OPLUS_FEATURE_ESIM */
 obj-y += oplus/cpufreq_bouncing/
+obj-y += oplus/subsys_sleep_monitor/
