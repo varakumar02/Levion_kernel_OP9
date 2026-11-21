@@ -75,7 +75,7 @@ struct cpufreq_bouncing {
 };
 
 /* init config */
-static bool enable = true;
+static bool enable = false;
 module_param_named(enable, enable, bool, 0644);
 
 static bool debug = false;
