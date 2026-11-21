@@ -323,9 +323,6 @@ void cb_update(struct cpufreq_policy *pol, u64 time)
 	if (!cb->enable)
 		return;
 
-	if (unlikely(!pol->fast_switch_enabled))
-		return;
-
 	/* for first update */
 	if (unlikely(!cb->last_ts))
 		cb->last_ts = cb->last_freq_update_ts = time;
