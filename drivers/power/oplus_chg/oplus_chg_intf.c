@@ -1031,7 +1031,10 @@ static int oplus_chg_intf_usb_mod_notifier_call(struct notifier_block *nb,
 				pr_info("hw_detect=%d, reconnect_count=%d\n", hw_detect, chip->reconnect_count);
 				if (hw_detect) {
 					op_dev->icon_debounce = true;
-					if (chip->reconnect_count == 0)
+					/* a dropout before the charger is identified is the
+					 * plug-in / PD negotiation, not a charger resetting */
+					if (chip->reconnect_count == 0 &&
+					    chip->charger_type != POWER_SUPPLY_TYPE_UNKNOWN)
 						chip->norchg_reconnect_count++;
 					schedule_delayed_work(&op_dev->connect_check_work, msecs_to_jiffies(2000));
 				} else {
@@ -1085,7 +1088,10 @@ static int oplus_chg_intf_usb_mod_notifier_call(struct notifier_block *nb,
 				(void)oplus_chg_hw_detect(op_dev, &hw_detect);
 				if (hw_detect) {
 					op_dev->icon_debounce = true;
-					if (chip->reconnect_count == 0)
+					/* a dropout before the charger is identified is the
+					 * plug-in / PD negotiation, not a charger resetting */
+					if (chip->reconnect_count == 0 &&
+					    chip->charger_type != POWER_SUPPLY_TYPE_UNKNOWN)
 						chip->norchg_reconnect_count++;
 					schedule_delayed_work(&op_dev->connect_check_work, msecs_to_jiffies(2000));
 				} else {
