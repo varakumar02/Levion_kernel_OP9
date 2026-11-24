@@ -45,15 +45,8 @@ Flashing a custom kernel will not void your warranty, but there is always a risk
 Levion is a battery-first kernel (60/40 balance) with full NetHunter support.
 Tuned for longer screen-on time, cooler idle temps, and a snappier device — for Internal Injection 😜
 
-#### 🌿 Branches
-| Branch | What it is |
-|:--|:--|
-| **`aox`** | Levion base: everything in this list, no root, no NetHunter drivers |
-| **`aox-nh`** | `aox` + the [Kali NetHunter Edition](#-kali-nethunter-edition) drivers |
-| **`aox-ksun`** | `aox-nh` + **KernelSU Next** + **SUSFS** (root) |
-
-#### 🐧 Base
-- 🐧 **Linux 5.4.305** with the [OpenELA](https://github.com/openela/kernel-lts) LTS updates (~400 extra security fixes)
+#### >_ Base
+- >_ **Linux 5.4.305** with the [OpenELA](https://github.com/openela/kernel-lts) LTS updates (~400 extra security fixes)
 - 🏎️ **Clang PGO + LTO**: built with a profile from real OnePlus 9 / 9 Pro use (3–12% faster kernel code)
 
 #### ⚡ Performance & Scheduler
