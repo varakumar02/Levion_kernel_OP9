@@ -25,7 +25,8 @@ OUT_DIR="${WORK_DIR}/out"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 RUN_DIR="${OUT_DIR}/vendor_dlkm_files_${TIMESTAMP}"
 
-OUT_ZIP="${OUT_DIR}/levion_kernel.zip"
+ZIP_NAME="${ZIP_NAME:-levion_kernel}"     # the test workflow sets levion_kernel_debug
+OUT_ZIP="${OUT_DIR}/${ZIP_NAME}.zip"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'
@@ -535,7 +536,7 @@ mkdir -p "${OUT_DIR}" \
 
 [[ -f "${OUT_ZIP}" ]] && rm -f "${OUT_ZIP}"
 
-info "Creating levion_kernel.zip from ${AK3_DIR}..."
+info "Creating ${ZIP_NAME}.zip from ${AK3_DIR}..."
 cd "${AK3_DIR}"
 # A modules-less kernel must not carry the stock vendor_dlkm.img or the
 # stock ramdisk modules: anykernel.sh only purges the vendor_boot ramdisk's
@@ -619,5 +620,5 @@ fi
 echo -e "  ${BOLD}AK3 Zip:${NC}             ${OUT_ZIP} (${ZIP_SIZE})"
 echo -e "  ${BOLD}Signed (releasekey):${NC} ${SIGNED}"
 echo ""
-echo -e "${GREEN}Flash ${BOLD}levion_kernel.zip${NC}${GREEN} via ADB Sideload / KernelFlasher.${NC}"
+echo -e "${GREEN}Flash ${BOLD}${ZIP_NAME}.zip${NC}${GREEN} via ADB Sideload / KernelFlasher.${NC}"
 echo ""
