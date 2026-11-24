@@ -62,13 +62,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 6: Create Release and Upload Asset
+      # Step 6: Fill in the release date (month and year of this run)
+      - name: Set release date in the notes
+        run: sed -i "s/{{RELEASE_DATE}}/$(date -u '+%B %Y')/" .github/release_notes.md
+
+      # Step 7: Create Release and Upload Asset
       - name: Create Release and Upload Asset
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ksu-release
           name: Levion Kernel
           files: ${{ env.zip_file }}
-          body_path: .github/release_notes.txt
+          body_path: .github/release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
