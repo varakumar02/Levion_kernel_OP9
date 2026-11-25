@@ -20,7 +20,7 @@
 #else
 #include <linux/notifier.h>
 #include <linux/fb.h>
-#ifdef CONFIG_DRM_MSM
+#if IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 #include <linux/msm_drm_notify.h>
 #endif
 #endif
