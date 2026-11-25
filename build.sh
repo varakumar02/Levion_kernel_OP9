@@ -11,7 +11,7 @@
 #   ├── Levion_kernel_OP9/     ← kernel source — script lives here
 #   │   └── build_levion.sh
 #   ├── vendor_dlkm.img        ← stock image (erofs or ext4, used as base)
-#   ├── levion_kernel/         ← AnyKernel3 dir
+#   ├── AnyKernel3/            ← AnyKernel3 dir
 #   └── toolchains/neutron-clang/  ← auto-imported by this script
 
 set -euo pipefail
@@ -23,7 +23,7 @@ set -euo pipefail
 KDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # kernel source root
 PARENT="$(dirname "${KDIR}")"                           # one level up
 STOCK_IMG="${PARENT}/vendor_dlkm.img"                   # stock image sits in parent
-AK3_DIR="${PARENT}/levion_kernel"                       # AnyKernel3 dir in parent
+AK3_DIR="${PARENT}/AnyKernel3"                          # AnyKernel3 dir in parent
 BUILD_MODULES_DIR="${KDIR}/out/modules"
 OUT_VDLKM="${PARENT}/vendor_dlkm_new.img"               # generated image — STOCK_IMG is read-only, never modified
 
