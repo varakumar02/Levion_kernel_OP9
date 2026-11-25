@@ -356,11 +356,27 @@ if [[ "${MODE}" == "all" ]]; then
     BUILT_DTBO="${KDIR}/out/arch/arm64/boot/dtbo.img"
     if [ -f "${BUILT_DTBO}" ]; then
         cp -p "${BUILT_DTBO}" "${AK3_DIR}/dtbo.img"
-        # AVB hash footer: signed ROMs verify dtbo as a chained partition
+        # AVB hash footer: signed ROMs verify dtbo as a chained partition.
+        # Signed with the ROM's AVB key (avb.pk8 in KEY_DIR) when present,
+        # unsigned otherwise (an unlocked bootloader accepts that).
+        AVB_SIGN=()
+        AVB_TMP=""
+        if [ -f "${KEY_DIR}/avb.pk8" ]; then
+            AVB_TMP=$(mktemp -d) && chmod 700 "${AVB_TMP}"
+            openssl pkcs8 -inform DER -nocrypt -in "${KEY_DIR}/avb.pk8" -out "${AVB_TMP}/avb.pem" \
+                || { rm -rf "${AVB_TMP}"; red "[✗] could not read ${KEY_DIR}/avb.pk8"; exit 1; }
+            AVB_SIGN=(--key "${AVB_TMP}/avb.pem" --algorithm SHA256_RSA4096)
+        fi
         python3 "${KDIR}/.github/tools/avbtool.py" add_hash_footer \
             --image "${AK3_DIR}/dtbo.img" --partition_name dtbo \
-            --partition_size 25165824 || { red "[✗] avbtool failed"; exit 1; }
-        green "    Replaced dtbo.img (with AVB footer)"
+            --partition_size 25165824 "${AVB_SIGN[@]}" \
+            || { rm -rf "${AVB_TMP}"; red "[✗] avbtool failed"; exit 1; }
+        [ -n "${AVB_TMP}" ] && rm -rf "${AVB_TMP}"
+        if [ ${#AVB_SIGN[@]} -gt 0 ]; then
+            green "    Replaced dtbo.img (AVB footer signed with ${KEY_DIR}/avb.pk8)"
+        else
+            yellow "    Replaced dtbo.img (unsigned AVB footer, no avb.pk8 in ${KEY_DIR})"
+        fi
     else
         red "[✗] dtbo.img not found: ${BUILT_DTBO}"
         exit 1
