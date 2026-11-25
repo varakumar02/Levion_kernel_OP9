@@ -381,14 +381,13 @@ static __nocfi ssize_t ksu_proc_pid_attr_write(struct file *file, const char __u
 
     if (ksu_should_hide_context(kbuf)) {
         /*
-         * Run the real handler first (policy denies an app this transition,
-         * so nothing actually changes) to match stock timing, then report
-         * -EINVAL. A valid-but-privileged label such as adbroot would
-         * otherwise answer -EACCES while a garbage label answers -EINVAL,
-         * and that difference is what reveals the label exists. Returning
-         * -EINVAL for both makes a hidden label indistinguishable from junk.
+         * attr/current is a direct write with no write-transaction fd, so an
+         * immediate -EINVAL here is indistinguishable from a garbage label:
+         * same error, same cost. Running the real handler first would make a
+         * hidden valid label (e.g. adbroot) pay the full setprocattr cost and
+         * return a slow -EACCES, which is itself a timing tell; the cheap
+         * -EINVAL matches what a junk label gets.
          */
-        orig_proc_pid_attr_write(file, ubuf, size, pos);
         pr_info_ratelimited("selinux_hide: attr/current masked: %.40s\n", kbuf);
         return -EINVAL;
     }
