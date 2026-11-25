@@ -352,6 +352,20 @@ if [[ "${MODE}" == "all" ]]; then
     cp -p "${BUILT_IMAGE}" "${AK3_DIR}/Image"
     green "    Replaced Image"
 
+    # board overlays (dtbo partition), flashed by anykernel's write_boot
+    BUILT_DTBO="${KDIR}/out/arch/arm64/boot/dtbo.img"
+    if [ -f "${BUILT_DTBO}" ]; then
+        cp -p "${BUILT_DTBO}" "${AK3_DIR}/dtbo.img"
+        # AVB hash footer: signed ROMs verify dtbo as a chained partition
+        python3 "${KDIR}/.github/tools/avbtool.py" add_hash_footer \
+            --image "${AK3_DIR}/dtbo.img" --partition_name dtbo \
+            --partition_size 25165824 || { red "[✗] avbtool failed"; exit 1; }
+        green "    Replaced dtbo.img (with AVB footer)"
+    else
+        red "[✗] dtbo.img not found: ${BUILT_DTBO}"
+        exit 1
+    fi
+
     # Place vendor_dlkm.img (the freshly generated one, NOT the stock base)
     if ! modules_enabled; then
         yellow "    [!] modules-less kernel — no vendor_dlkm.img to place"

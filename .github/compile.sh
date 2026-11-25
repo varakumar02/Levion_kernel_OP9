@@ -484,14 +484,35 @@ success "Step 5 complete: vendor_ramdisk modules updated."
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Step 6: Copy Image and vendor_dlkm.img into AK3
+# Step 6: Copy Image, dtbo.img and vendor_dlkm.img into AK3
 # ══════════════════════════════════════════════════════════════════════════════
-step "Step 6: Copying Image and vendor_dlkm.img into AK3"
+step "Step 6: Copying Image, dtbo.img and vendor_dlkm.img into AK3"
 
 info "Copying Image → ${AK3_DIR}/Image"
 cp -p "${KERNEL_IMAGE}" "${AK3_DIR}/Image" \
     || fail "Failed to copy Kernel Image to ${AK3_DIR}/Image"
 pass "Kernel Image copied to AK3"
+
+# The board overlays (charging limits, panel, ...) live in the dtbo partition,
+# not in Image; anykernel's write_boot flashes dtbo.img to the active slot.
+DTBO_IMG="${KDIR}/out/arch/arm64/boot/dtbo.img"
+[[ -f "${DTBO_IMG}" ]] || fail "dtbo.img not found at ${DTBO_IMG} (CONFIG_BUILD_ARM64_DT_OVERLAY)"
+info "Copying dtbo.img → ${AK3_DIR}/dtbo.img"
+cp -p "${DTBO_IMG}" "${AK3_DIR}/dtbo.img" \
+    || fail "Failed to copy dtbo.img to ${AK3_DIR}/dtbo.img"
+pass "dtbo.img copied to AK3"
+
+# Signed ROM builds verify dtbo as a chained AVB partition, so the bootloader
+# needs an AVB footer at the end of it; a raw dtbo.img (no footer) is invalid
+# metadata and the phone hangs at boot even when unlocked. Add an unsigned
+# hash footer sized to the partition (BOARD_DTBOIMG_PARTITION_SIZE); unsigned
+# only counts as a verification error, which an unlocked bootloader allows.
+DTBO_PARTITION_SIZE=25165824
+python3 "${KDIR}/.github/tools/avbtool.py" add_hash_footer \
+    --image "${AK3_DIR}/dtbo.img" --partition_name dtbo \
+    --partition_size "${DTBO_PARTITION_SIZE}" \
+    || fail "avbtool add_hash_footer failed for dtbo.img"
+pass "AVB hash footer added to dtbo.img"
 
 if modules_enabled; then
     info "Copying vendor_dlkm.img → ${AK3_DIR}/vendor_dlkm.img"
