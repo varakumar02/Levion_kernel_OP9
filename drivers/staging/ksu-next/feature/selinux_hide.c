@@ -381,7 +381,16 @@ static __nocfi ssize_t ksu_proc_pid_attr_write(struct file *file, const char __u
     kbuf[len] = '\0';
 
     if (ksu_should_hide_context(kbuf)) {
-        pr_info_ratelimited("selinux_hide: attr/current blocked: %.40s\n", kbuf);
+        /*
+         * Run the real handler first (policy denies an app this transition,
+         * so nothing actually changes) to match stock timing, then report
+         * -EINVAL. A valid-but-privileged label such as adbroot would
+         * otherwise answer -EACCES while a garbage label answers -EINVAL,
+         * and that difference is what reveals the label exists. Returning
+         * -EINVAL for both makes a hidden label indistinguishable from junk.
+         */
+        orig_proc_pid_attr_write(file, ubuf, size, pos);
+        pr_info_ratelimited("selinux_hide: attr/current masked: %.40s\n", kbuf);
         return -EINVAL;
     }
 
@@ -542,6 +551,7 @@ static int ksu_selinux_hide_init_thread(void *data)
     ksu_selinux_hide_add_type("xposed_data");
     ksu_selinux_hide_add_type("msd_app");
     ksu_selinux_hide_add_type("msd_daemon");
+    ksu_selinux_hide_add_type("adbroot");
 
 try_again:
     if (ksu_prepare_fake_status_page()) {
