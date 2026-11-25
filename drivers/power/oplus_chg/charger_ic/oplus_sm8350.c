@@ -1375,6 +1375,9 @@ static void battery_chg_update_usb_type_work(struct work_struct *work)
 	}
 }
 
+#define PD_NO_SVID_TIMEOUT_MS	5000
+static unsigned long pd_no_svid_since;
+
 static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 				size_t len)
 {
@@ -1424,6 +1427,7 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 		bcdev->count_run = 0;
 		usb_online = false;
 		chip->svid_verified = false;
+		pd_no_svid_since = 0;
 		chip->usb_enum_status = false;
 		if (is_usb_ocm_available(bcdev))
 			pst = &bcdev->ocm_list[OCM_TYPE_USB];
@@ -1456,6 +1460,7 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 	case BC_USB_STATUS_NO_PRESENT:
 		usb_present = false;
 		chip->svid_verified = false;
+		pd_no_svid_since = 0;
 		chip->usb_enum_status = false;
 		if (is_usb_ocm_available(bcdev))
 			pst = &bcdev->ocm_list[OCM_TYPE_USB];
@@ -3000,8 +3005,6 @@ static bool oplus_chg_get_pd_type(void)
 	if (!chip) {
 		return false;
 	}
-	if (!chip->svid_verified)
-		return false;
 
 	bcdev = chip->pmic_spmi.bcdev_chip;
 	pst = &bcdev->ocm_list[OCM_TYPE_USB];
@@ -3012,7 +3015,7 @@ static bool oplus_chg_get_pd_type(void)
 		chg_err("read usb pd_type fail, rc=%d\n", rc);
 		if (!chip->charger_exist)
 			is_pd_type = false;
-		return is_pd_type;
+		return chip->svid_verified ? is_pd_type : false;
 	}
 	switch (pst->prop[prop_id]) {
 		case POWER_SUPPLY_USB_TYPE_PD:
@@ -3023,6 +3026,26 @@ static bool oplus_chg_get_pd_type(void)
 		default:
 			is_pd_type = false;
 			break;
+	}
+
+	/*
+	 * Some PD sources (laptop ports, hubs) never answer the SVID
+	 * discovery. Treat them as a non-OPLUS PD source after a timeout
+	 * instead of staying at 5 V forever.
+	 */
+	if (!chip->svid_verified) {
+		if (!is_pd_type) {
+			pd_no_svid_since = 0;
+			return false;
+		}
+		if (!pd_no_svid_since)
+			pd_no_svid_since = jiffies ? jiffies : 1;
+		if (time_before(jiffies, pd_no_svid_since +
+				msecs_to_jiffies(PD_NO_SVID_TIMEOUT_MS)))
+			return false;
+		chg_err("no SVID answer from PD source, using it as a standard PD charger\n");
+		chip->svid_verified = true;
+		chip->is_oplus_svid = false;
 	}
 
 	return is_pd_type;
