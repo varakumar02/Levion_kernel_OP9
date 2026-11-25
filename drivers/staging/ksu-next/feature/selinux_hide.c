@@ -310,11 +310,26 @@ static __nocfi ssize_t ksu_sel_write(struct file *file, const char __user *ubuf,
     kbuf[len] = 0;
 
     if (ino == KSU_SEL_CONTEXT_INO) {
-        if (ksu_should_hide_context(kbuf)) {
-            pr_info_ratelimited("selinux_hide: blocked context: %.40s\n", kbuf);
-            return -EINVAL;
+        if (!ksu_should_hide_context(kbuf))
+            goto passthrough;
+        /*
+         * Run the real handler first so the write transaction fd is consumed
+         * and the policy lookup actually runs, then mask the result as
+         * invalid. An early -EINVAL here left the fd untouched (a second
+         * write on the same fd still succeeded) and skipped the parse, a
+         * transaction-state and timing difference from a stock rejection.
+         * After this a hidden-context write behaves like a stock
+         * invalid-context write: -EINVAL now, -EBUSY on the next write.
+         */
+        ret = orig_sel_write(file, ubuf, size, pos);
+        if (ret > 0) {
+            struct simple_transaction_argresp *ar = file->private_data;
+            if (ar)
+                ar->size = 0;
+            ret = -EINVAL;
         }
-        goto passthrough;
+        pr_info_ratelimited("selinux_hide: masked context: %.40s\n", kbuf);
+        return ret;
     }
 
     ret = orig_sel_write(file, ubuf, size, pos);
