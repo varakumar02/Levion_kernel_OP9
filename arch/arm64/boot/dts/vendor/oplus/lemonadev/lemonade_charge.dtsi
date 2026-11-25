@@ -619,7 +619,7 @@
 &battery_charger {
 	compatible = "oplus,sm8350";
 	qcom,input_current_charger_ma = <2000>;
-	qcom,pd_input_current_charger_ma = <2000>;
+	qcom,pd_input_current_charger_ma = <3000>;
 	qcom,qc_input_current_charger_ma = <2000>;
 
 	qcom,input_current_usb_ma = <500>;
@@ -627,10 +627,10 @@
 	qcom,input_current_cdp_ma = <1500>;
 	qcom,input_current_led_ma = <1200>;
 	qcom,input_current_led_ma_high = <2000>;
-	qcom,input_current_led_ma_warm = <2000>;
-	qcom,input_current_led_ma_normal = <2000>;
+	qcom,input_current_led_ma_warm = <3000>;
+	qcom,input_current_led_ma_normal = <3000>;
 	qcom,led_warm_bat_decidegc = <350>;
-	qcom,led_high_bat_decidegc = <370>;
+	qcom,led_high_bat_decidegc = <390>;
 
 	qcom,input_current_camera_ma = <1500>;
 	qcom,batt_current_camera_ma = <500>;
