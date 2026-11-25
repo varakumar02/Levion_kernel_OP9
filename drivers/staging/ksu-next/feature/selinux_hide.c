@@ -203,6 +203,7 @@ static const struct ksu_dirty_rule ksu_dirty_rules[] = {
     { "u:r:magisk:s0",        "u:r:droidspacesd:s0"         },
     { "u:r:su:s0",            "u:r:droidspacesd:s0"         },
     { "u:r:system_server:s0", "u:r:droidspacesd:s0"         },
+    { "u:r:system_server:s0", "u:r:system_server:s0"        },
 };
 
 static bool ksu_is_dirty_access_query(const char *scon, const char *tcon)
