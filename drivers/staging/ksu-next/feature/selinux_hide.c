@@ -221,28 +221,27 @@ static bool ksu_is_dirty_access_query(const char *scon, const char *tcon)
 static void ksu_fix_access_response(void *private_data, bool deny)
 {
     struct simple_transaction_argresp *ar = private_data;
-    unsigned int allowed, ff, auditallow, auditdeny, flags, seqno;
+    unsigned int allowed, decided, auditallow, auditdeny, seqno, flags;
     char buf[64];
     int len;
 
-    if (!ar)
+    /*
+     * Only a rule we actually want to mask is rewritten. Forcing a uniform
+     * seqno and decided mask on every answer (even allowed ones) made the
+     * whole access surface look forged; leaving the real fields in place
+     * makes a masked edge read like a genuine policy denial instead.
+     */
+    if (!ar || !deny)
         return;
 
     if (sscanf(ar->data, "%x %x %x %x %u %x",
-               &allowed, &ff, &auditallow, &auditdeny, &seqno, &flags) != 6)
+               &allowed, &decided, &auditallow, &auditdeny, &seqno, &flags) != 6)
         return;
 
-    if (deny) {
-        allowed    = 0;
-        auditallow = 0;
-        auditdeny  = 0xffffffff;
-        flags      = 0;
-    }
-
-    seqno = 1;
+    allowed = 0;
 
     len = scnprintf(buf, sizeof(buf), "%x %x %x %x %u %x",
-                    allowed, 0xffffffff, auditallow, auditdeny, seqno, flags);
+                    allowed, decided, auditallow, auditdeny, seqno, flags);
 
     if (len > 0 && len < (int)SIMPLE_TRANSACTION_LIMIT) {
         memcpy(ar->data, buf, len);
