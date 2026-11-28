@@ -537,8 +537,10 @@ if [[ "${MODE}" == "all" ]]; then
     fi
 
     # Zip
-    OUT_ZIP="${PARENT}/levion_final.zip"
-    rm -f "${OUT_ZIP}"
+    # Levion-<yyyymmdd>-signed.zip (-unsigned without a releasekey); only
+    # the newest zip is kept, older Levion-*.zip and levion_final.zip go
+    OUT_ZIP="${PARENT}/Levion-$(date +%Y%m%d).zip"
+    rm -f "${PARENT}"/Levion-*.zip "${PARENT}/levion_final.zip"
     cd "${AK3_DIR}"
     # Modules-less kernel: leave the stock vendor_dlkm.img and ramdisk modules
     # out, so anykernel.sh purges the vendor_boot ramdisk's modules.* instead of
@@ -552,8 +554,10 @@ if [[ "${MODE}" == "all" ]]; then
         sign_zip "${OUT_ZIP}" "${KEY_DIR}/releasekey.pk8" "${KEY_DIR}/releasekey.x509.pem" \
             || { red "[✗] Signing failed"; exit 1; }
         green "    Signed with releasekey ($(openssl x509 -in "${KEY_DIR}/releasekey.x509.pem" -noout -fingerprint -sha256 | cut -d= -f2))"
+        mv "${OUT_ZIP}" "${OUT_ZIP%.zip}-signed.zip" && OUT_ZIP="${OUT_ZIP%.zip}-signed.zip"
     else
         yellow "    [!] No releasekey in ${KEY_DIR} — zip left unsigned"
+        mv "${OUT_ZIP}" "${OUT_ZIP%.zip}-unsigned.zip" && OUT_ZIP="${OUT_ZIP%.zip}-unsigned.zip"
     fi
 
     ZIP_SIZE=$(du -sh "${OUT_ZIP}" | cut -f1)
