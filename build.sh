@@ -62,6 +62,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ──────────────────────────────────────────────────────────────
+# Log + build time — everything printed also goes to
+# <parent>/levion_build.log (overwritten each run); the time taken
+# is printed at the end, also when the build fails
+# ──────────────────────────────────────────────────────────────
+
+LOG="${PARENT}/levion_build.log"
+exec > >(tee "${LOG}") 2>&1
+SECONDS=0
+CLEANUP=""   # scratch dir removed on exit (set by the vendor_dlkm step)
+on_exit() {
+    local rc=$?
+    [ -n "${CLEANUP}" ] && rm -rf "${CLEANUP}"
+    [ "${rc}" -ne 0 ] && echo -e "\e[1;31m[✗] Failed after $((SECONDS / 60))m $((SECONDS % 60))s — log: ${LOG}\e[0m"
+    return 0
+}
+trap on_exit EXIT
+
+# ──────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────
 
@@ -292,7 +310,7 @@ if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; th
     # Scratch dir — auto-deleted on exit, unless --debug keeps it
     SCRATCH=$(mktemp -d "${KDIR}/.vendor_dlkm_scratch_XXXXXX")
     if [ "${DEBUG}" -eq 0 ]; then
-        trap 'rm -rf "${SCRATCH}"' EXIT
+        CLEANUP="${SCRATCH}"
     else
         yellow "    [debug] keeping scratch/staging: ${SCRATCH}"
     fi
@@ -537,7 +555,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 
 echo ""
-green "[✓] All done!"
+green "[✓] All done in $((SECONDS / 60))m $((SECONDS % 60))s (log: ${LOG})"
 [[ "${MODE}" == "all" || "${MODE}" == "image" ]]        && echo "    Kernel Image:     ${KDIR}/out/arch/arm64/boot/Image"
 { [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; } && echo "    vendor_dlkm.img:  ${OUT_VDLKM}  (stock base untouched: ${STOCK_IMG})"
 [[ "${MODE}" == "all" ]]                                 && echo "    Flashable zip:    ${OUT_ZIP}"
