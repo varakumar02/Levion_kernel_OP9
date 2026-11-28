@@ -25,7 +25,7 @@ OUT_DIR="${WORK_DIR}/out"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 RUN_DIR="${OUT_DIR}/vendor_dlkm_files_${TIMESTAMP}"
 
-ZIP_NAME="${ZIP_NAME:-levion_kernel}"     # the test workflow sets levion_kernel_debug
+ZIP_NAME="Levion-$(date +%Y%m%d)"        # gets -signed / -unsigned after signing
 OUT_ZIP="${OUT_DIR}/${ZIP_NAME}.zip"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -534,7 +534,7 @@ step "Step 7: Zipping AnyKernel3"
 mkdir -p "${OUT_DIR}" \
     || fail "Failed to create output directory: ${OUT_DIR}"
 
-[[ -f "${OUT_ZIP}" ]] && rm -f "${OUT_ZIP}"
+rm -f "${OUT_DIR}"/Levion-*.zip
 
 info "Creating ${ZIP_NAME}.zip from ${AK3_DIR}..."
 cd "${AK3_DIR}"
@@ -588,6 +588,7 @@ if [[ -n "${RELEASEKEY_PK8_B64:-}" && -n "${RELEASEKEY_X509:-}" ]]; then
     if sign_zip "${OUT_ZIP}" "${KEY_TMP}/releasekey.pk8" "${KEY_TMP}/releasekey.x509.pem"; then
         SIGNED=$(openssl x509 -in "${KEY_TMP}/releasekey.x509.pem" -noout -fingerprint -sha256 | cut -d= -f2)
         pass "Zip signed with the releasekey (SHA-256 ${SIGNED})"
+        ZIP_NAME="${ZIP_NAME}-signed"
     else
         rm -rf "${KEY_TMP}"
         fail "Signing failed"
@@ -595,7 +596,10 @@ if [[ -n "${RELEASEKEY_PK8_B64:-}" && -n "${RELEASEKEY_X509:-}" ]]; then
     rm -rf "${KEY_TMP}"
 else
     warn "RELEASEKEY_PK8_B64 / RELEASEKEY_X509 not set — zip left unsigned"
+    ZIP_NAME="${ZIP_NAME}-unsigned"
 fi
+mv "${OUT_ZIP}" "${OUT_DIR}/${ZIP_NAME}.zip"
+OUT_ZIP="${OUT_DIR}/${ZIP_NAME}.zip"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Step 8: Build Complete — Release Summary
