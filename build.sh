@@ -183,6 +183,14 @@ place_dtbo() {
 }
 
 # ──────────────────────────────────────────────────────────────
+# Build user/host shown in uname -v and /proc/version — fixed, so
+# builds don't carry the local machine's name (override via env)
+# ──────────────────────────────────────────────────────────────
+
+export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-varakumar02}"
+export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-levion}"
+
+# ──────────────────────────────────────────────────────────────
 # Common make flags
 # ──────────────────────────────────────────────────────────────
 
