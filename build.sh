@@ -5,6 +5,7 @@
 #   ./build_levion.sh                # full build: kernel + vendor_dlkm.img + kernel.zip
 #   ./build_levion.sh --vendor_dlkm  # only regenerate vendor_dlkm.img (uses existing out/modules)
 #   ./build_levion.sh --image        # only build the kernel Image (no vendor_dlkm, no zip)
+#   ./build_levion.sh --dtbo         # only rebuild dtbo.img and put it in AnyKernel3 (no clean, no zip)
 #   ./build_levion.sh -d | --dirty   # skip the clean step, rebuild only what changed (any mode)
 #   ./build_levion.sh -fs erofs      # vendor_dlkm.img as EROFS (-fs ext4 is the default)
 #
@@ -34,6 +35,7 @@ OUT_VDLKM="${PARENT}/vendor_dlkm_new.img"               # generated image — ST
 # Default (no args): full build — kernel + vendor_dlkm.img + zip
 # --vendor_dlkm   : only regenerate vendor_dlkm.img
 # --image         : only build the kernel Image
+# --dtbo          : only rebuild dtbo.img (with AVB footer) into AnyKernel3
 # --debug         : keep the scratch/staging (generated files left on disk)
 # -d, --dirty     : skip mrproper, keep out/ and rebuild only what changed
 # -fs, --fs TYPE  : vendor_dlkm.img filesystem, ext4 (default) or erofs
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --vendor_dlkm) MODE="vendor_dlkm"; shift ;;
         --image)       MODE="image";       shift ;;
+        --dtbo)        MODE="dtbo";        shift ;;
         --debug)       DEBUG=1;            shift ;;
         -d|--dirty)    DIRTY=1;            shift ;;
         -fs|--fs)
@@ -97,7 +100,7 @@ setup_neutron_clang() {
     green "[✓] Neutron Clang ${tag} → ${NEUTRON_DIR}"
 }
 
-if [[ "${MODE}" == "all" || "${MODE}" == "image" ]]; then
+if [[ "${MODE}" == "all" || "${MODE}" == "image" || "${MODE}" == "dtbo" ]]; then
     setup_neutron_clang
     export PATH="${NEUTRON_DIR}/bin:${PATH}"
     green "    $(clang --version | head -1)"
@@ -141,6 +144,42 @@ sign_zip() {
         && jarsigner -verify "${zip}" | grep -q "jar verified" || rc=1
     rm -rf "${tmp}"
     return "${rc}"
+}
+
+# ──────────────────────────────────────────────────────────────
+# dtbo.img → AnyKernel3 with an AVB hash footer (full build and --dtbo)
+# ──────────────────────────────────────────────────────────────
+
+place_dtbo() {
+    # board overlays (dtbo partition), flashed by anykernel's write_boot
+    BUILT_DTBO="${KDIR}/out/arch/arm64/boot/dtbo.img"
+    if [ -f "${BUILT_DTBO}" ]; then
+        cp -p "${BUILT_DTBO}" "${AK3_DIR}/dtbo.img"
+        # AVB hash footer: signed ROMs verify dtbo as a chained partition.
+        # Signed with the ROM's AVB key (avb.pk8 in KEY_DIR) when present,
+        # unsigned otherwise (an unlocked bootloader accepts that).
+        AVB_SIGN=()
+        AVB_TMP=""
+        if [ -f "${KEY_DIR}/avb.pk8" ]; then
+            AVB_TMP=$(mktemp -d) && chmod 700 "${AVB_TMP}"
+            openssl pkcs8 -inform DER -nocrypt -in "${KEY_DIR}/avb.pk8" -out "${AVB_TMP}/avb.pem" \
+                || { rm -rf "${AVB_TMP}"; red "[✗] could not read ${KEY_DIR}/avb.pk8"; exit 1; }
+            AVB_SIGN=(--key "${AVB_TMP}/avb.pem" --algorithm SHA256_RSA4096)
+        fi
+        python3 "${KDIR}/.github/tools/avbtool.py" add_hash_footer \
+            --image "${AK3_DIR}/dtbo.img" --partition_name dtbo \
+            --partition_size 25165824 "${AVB_SIGN[@]}" \
+            || { rm -rf "${AVB_TMP}"; red "[✗] avbtool failed"; exit 1; }
+        [ -n "${AVB_TMP}" ] && rm -rf "${AVB_TMP}"
+        if [ ${#AVB_SIGN[@]} -gt 0 ]; then
+            green "    Replaced dtbo.img (AVB footer signed with ${KEY_DIR}/avb.pk8)"
+        else
+            yellow "    Replaced dtbo.img (unsigned AVB footer, no avb.pk8 in ${KEY_DIR})"
+        fi
+    else
+        red "[✗] dtbo.img not found: ${BUILT_DTBO}"
+        exit 1
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -386,6 +425,21 @@ if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && ! modules_enabled; 
 fi
 
 # ══════════════════════════════════════════════════════════════
+# DTBO.IMG ONLY  (--dtbo)
+# ══════════════════════════════════════════════════════════════
+
+if [[ "${MODE}" == "dtbo" ]]; then
+    cd "${KDIR}"
+    yellow "[*] Loading defconfig..."
+    make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki_defconfig
+    yellow "[*] Building dtbo.img..."
+    make -j"$(nproc)" "${MAKE_FLAGS[@]}" dtbo.img
+    green "[✓] dtbo.img built"
+    ensure_ak3
+    place_dtbo
+fi
+
+# ══════════════════════════════════════════════════════════════
 # KERNEL.ZIP  (only on full build)
 # ══════════════════════════════════════════════════════════════
 
@@ -405,35 +459,7 @@ if [[ "${MODE}" == "all" ]]; then
     cp -p "${BUILT_IMAGE}" "${AK3_DIR}/Image"
     green "    Replaced Image"
 
-    # board overlays (dtbo partition), flashed by anykernel's write_boot
-    BUILT_DTBO="${KDIR}/out/arch/arm64/boot/dtbo.img"
-    if [ -f "${BUILT_DTBO}" ]; then
-        cp -p "${BUILT_DTBO}" "${AK3_DIR}/dtbo.img"
-        # AVB hash footer: signed ROMs verify dtbo as a chained partition.
-        # Signed with the ROM's AVB key (avb.pk8 in KEY_DIR) when present,
-        # unsigned otherwise (an unlocked bootloader accepts that).
-        AVB_SIGN=()
-        AVB_TMP=""
-        if [ -f "${KEY_DIR}/avb.pk8" ]; then
-            AVB_TMP=$(mktemp -d) && chmod 700 "${AVB_TMP}"
-            openssl pkcs8 -inform DER -nocrypt -in "${KEY_DIR}/avb.pk8" -out "${AVB_TMP}/avb.pem" \
-                || { rm -rf "${AVB_TMP}"; red "[✗] could not read ${KEY_DIR}/avb.pk8"; exit 1; }
-            AVB_SIGN=(--key "${AVB_TMP}/avb.pem" --algorithm SHA256_RSA4096)
-        fi
-        python3 "${KDIR}/.github/tools/avbtool.py" add_hash_footer \
-            --image "${AK3_DIR}/dtbo.img" --partition_name dtbo \
-            --partition_size 25165824 "${AVB_SIGN[@]}" \
-            || { rm -rf "${AVB_TMP}"; red "[✗] avbtool failed"; exit 1; }
-        [ -n "${AVB_TMP}" ] && rm -rf "${AVB_TMP}"
-        if [ ${#AVB_SIGN[@]} -gt 0 ]; then
-            green "    Replaced dtbo.img (AVB footer signed with ${KEY_DIR}/avb.pk8)"
-        else
-            yellow "    Replaced dtbo.img (unsigned AVB footer, no avb.pk8 in ${KEY_DIR})"
-        fi
-    else
-        red "[✗] dtbo.img not found: ${BUILT_DTBO}"
-        exit 1
-    fi
+    place_dtbo
 
     # Place vendor_dlkm.img (the freshly generated one, NOT the stock base)
     if ! modules_enabled; then
@@ -507,3 +533,5 @@ green "[✓] All done!"
 [[ "${MODE}" == "all" || "${MODE}" == "image" ]]        && echo "    Kernel Image:     ${KDIR}/out/arch/arm64/boot/Image"
 { [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; } && echo "    vendor_dlkm.img:  ${OUT_VDLKM}  (stock base untouched: ${STOCK_IMG})"
 [[ "${MODE}" == "all" ]]                                 && echo "    Flashable zip:    ${OUT_ZIP}"
+[[ "${MODE}" == "dtbo" ]]                                && echo "    dtbo.img:         ${AK3_DIR}/dtbo.img"
+exit 0
