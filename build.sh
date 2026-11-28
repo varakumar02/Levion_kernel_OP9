@@ -5,6 +5,7 @@
 #   ./build_levion.sh                # full build: kernel + vendor_dlkm.img + kernel.zip
 #   ./build_levion.sh --vendor_dlkm  # only regenerate vendor_dlkm.img (uses existing out/modules)
 #   ./build_levion.sh --image        # only build the kernel Image (no vendor_dlkm, no zip)
+#   ./build_levion.sh -d | --dirty   # skip the clean step, rebuild only what changed (any mode)
 #
 # Expected directory layout (script lives inside the kernel source tree):
 #   <parent>/
@@ -33,15 +34,18 @@ OUT_VDLKM="${PARENT}/vendor_dlkm_new.img"               # generated image — ST
 # --vendor_dlkm   : only regenerate vendor_dlkm.img
 # --image         : only build the kernel Image
 # --debug         : keep the scratch/staging (generated files left on disk)
+# -d, --dirty     : skip mrproper, keep out/ and rebuild only what changed
 # ──────────────────────────────────────────────────────────────
 
 MODE="all"
 DEBUG=0
+DIRTY=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --vendor_dlkm) MODE="vendor_dlkm"; shift ;;
         --image)       MODE="image";       shift ;;
         --debug)       DEBUG=1;            shift ;;
+        -d|--dirty)    DIRTY=1;            shift ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -179,11 +183,15 @@ if [[ "${MODE}" == "all" || "${MODE}" == "image" ]]; then
     git submodule update --init --recursive
     green "[✓] Submodules ready"
 
-    # Step 2 — Clean
-    yellow "[*] Cleaning build tree..."
-    make "${MAKE_FLAGS[@]}" mrproper || yellow "    [~] mrproper exited non-zero (ignored)"
-    git status
-    green "[✓] Clean done"
+    # Step 2 — Clean (skipped for --dirty)
+    if [ "${DIRTY}" -eq 1 ]; then
+        yellow "[*] Dirty build — keeping out/, only changed files rebuild"
+    else
+        yellow "[*] Cleaning build tree..."
+        make "${MAKE_FLAGS[@]}" mrproper || yellow "    [~] mrproper exited non-zero (ignored)"
+        git status
+        green "[✓] Clean done"
+    fi
 
     # Step 3 — Defconfig
     yellow "[*] Loading defconfig..."
