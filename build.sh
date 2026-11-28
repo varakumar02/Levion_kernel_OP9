@@ -5,6 +5,8 @@
 #   ./build_levion.sh                # full build: kernel + vendor_dlkm.img + kernel.zip
 #   ./build_levion.sh --vendor_dlkm  # only regenerate vendor_dlkm.img (uses existing out/modules)
 #   ./build_levion.sh --image        # only build the kernel Image (no vendor_dlkm, no zip)
+#   ./build_levion.sh --menuconfig   # edit the defconfig in menuconfig, saved back with savedefconfig
+#   ./build_levion.sh --regen        # rewrite the defconfig through savedefconfig (no edits)
 #   ./build_levion.sh --dtbo         # only rebuild dtbo.img and put it in AnyKernel3 (no clean, no zip)
 #   ./build_levion.sh -d | --dirty   # skip the clean step, rebuild only what changed (any mode)
 #   ./build_levion.sh -fs erofs      # vendor_dlkm.img as EROFS (-fs ext4 is the default)
@@ -36,6 +38,8 @@ OUT_VDLKM="${PARENT}/vendor_dlkm_new.img"               # generated image — ST
 # --vendor_dlkm   : only regenerate vendor_dlkm.img
 # --image         : only build the kernel Image
 # --dtbo          : only rebuild dtbo.img (with AVB footer) into AnyKernel3
+# --menuconfig    : menuconfig on the defconfig, then savedefconfig back into it
+# --regen         : savedefconfig back into the defconfig without editing
 # --debug         : keep the scratch/staging (generated files left on disk)
 # -d, --dirty     : skip mrproper, keep out/ and rebuild only what changed
 # -fs, --fs TYPE  : vendor_dlkm.img filesystem, ext4 (default) or erofs
@@ -50,6 +54,8 @@ while [[ $# -gt 0 ]]; do
         --vendor_dlkm) MODE="vendor_dlkm"; shift ;;
         --image)       MODE="image";       shift ;;
         --dtbo)        MODE="dtbo";        shift ;;
+        --menuconfig)  MODE="menuconfig";  shift ;;
+        --regen)       MODE="regen";       shift ;;
         --debug)       DEBUG=1;            shift ;;
         -d|--dirty)    DIRTY=1;            shift ;;
         -fs|--fs)
@@ -68,7 +74,8 @@ done
 # ──────────────────────────────────────────────────────────────
 
 LOG="${PARENT}/levion_build.log"
-exec > >(tee "${LOG}") 2>&1
+# menuconfig needs the terminal itself, so it is not logged
+[[ "${MODE}" == "menuconfig" ]] || exec > >(tee "${LOG}") 2>&1
 SECONDS=0
 CLEANUP=""   # scratch dir removed on exit (set by the vendor_dlkm step)
 on_exit() {
@@ -118,7 +125,7 @@ setup_neutron_clang() {
     green "[✓] Neutron Clang ${tag} → ${NEUTRON_DIR}"
 }
 
-if [[ "${MODE}" == "all" || "${MODE}" == "image" || "${MODE}" == "dtbo" ]]; then
+if [[ "${MODE}" != "vendor_dlkm" ]]; then
     setup_neutron_clang
     export PATH="${NEUTRON_DIR}/bin:${PATH}"
     green "    $(clang --version | head -1)"
@@ -242,6 +249,22 @@ modules_enabled() {
     [ -f "${cfg}" ] || return 0
     grep -qx 'CONFIG_MODULES=y' "${cfg}"
 }
+
+# ══════════════════════════════════════════════════════════════
+# DEFCONFIG EDIT  (--menuconfig / --regen), then stop
+# ══════════════════════════════════════════════════════════════
+
+if [[ "${MODE}" == "menuconfig" || "${MODE}" == "regen" ]]; then
+    cd "${KDIR}"
+    DEFCONFIG="arch/arm64/configs/vendor/lahaina-qgki_defconfig"
+    make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki_defconfig
+    [[ "${MODE}" == "menuconfig" ]] && make "${MAKE_FLAGS[@]}" menuconfig
+    make "${MAKE_FLAGS[@]}" savedefconfig
+    cp out/defconfig "${DEFCONFIG}"
+    green "[✓] ${DEFCONFIG} saved — review before committing:"
+    git --no-pager diff --stat -- "${DEFCONFIG}"
+    exit 0
+fi
 
 # ══════════════════════════════════════════════════════════════
 # KERNEL BUILD  (skipped for --vendor_dlkm)
