@@ -526,7 +526,9 @@ if [[ "${MODE}" == "all" ]]; then
     fi
 
     # Zip
-    OUT_ZIP="${PARENT}/levion_final.zip"
+    # levion-<branch>-<date>-<commit>.zip, so builds don't overwrite each other
+    ZIP_BRANCH=$(git -C "${KDIR}" rev-parse --abbrev-ref HEAD | tr '/' '-')
+    OUT_ZIP="${PARENT}/levion-${ZIP_BRANCH}-$(date +%Y%m%d-%H%M)-$(git -C "${KDIR}" rev-parse --short=12 HEAD).zip"
     rm -f "${OUT_ZIP}"
     cd "${AK3_DIR}"
     # Modules-less kernel: leave the stock vendor_dlkm.img and ramdisk modules
@@ -547,6 +549,7 @@ if [[ "${MODE}" == "all" ]]; then
 
     ZIP_SIZE=$(du -sh "${OUT_ZIP}" | cut -f1)
     green "[✓] kernel.zip → ${OUT_ZIP} (${ZIP_SIZE})"
+    green "    sha256: $(sha256sum "${OUT_ZIP}" | cut -d' ' -f1)"
 
 fi
 
