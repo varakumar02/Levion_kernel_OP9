@@ -11,7 +11,7 @@
 #   ├── Levion_kernel_OP9/     ← kernel source — script lives here
 #   │   └── build_levion.sh
 #   ├── vendor_dlkm.img        ← stock image (erofs or ext4, used as base)
-#   ├── AnyKernel3/            ← AnyKernel3 dir
+#   ├── AnyKernel3/            ← AnyKernel3 dir (cloned from varakumar02/AnyKernel3 op9 if missing)
 #   └── toolchains/neutron-clang/  ← auto-imported by this script
 
 set -euo pipefail
@@ -90,6 +90,22 @@ if [[ "${MODE}" == "all" || "${MODE}" == "image" ]]; then
     export PATH="${NEUTRON_DIR}/bin:${PATH}"
     green "    $(clang --version | head -1)"
 fi
+
+# ──────────────────────────────────────────────────────────────
+# AnyKernel3 — cloned next to the kernel (op9 branch, same as CI)
+# when the folder is missing
+# ──────────────────────────────────────────────────────────────
+
+AK3_REPO="https://github.com/varakumar02/AnyKernel3.git"
+AK3_BRANCH="op9"
+
+ensure_ak3() {
+    [ -d "${AK3_DIR}" ] && return 0
+    yellow "[*] AnyKernel3 not found, cloning ${AK3_REPO} (${AK3_BRANCH}) → ${AK3_DIR}"
+    git clone --depth 1 -b "${AK3_BRANCH}" "${AK3_REPO}" "${AK3_DIR}" \
+        || { red "[✗] AnyKernel3 clone failed"; exit 1; }
+    green "[✓] AnyKernel3 ready"
+}
 
 # ──────────────────────────────────────────────────────────────
 # Zip signing — ROM releasekey from the priv-keys checkout next to
@@ -337,10 +353,7 @@ if [[ "${MODE}" == "all" ]]; then
 
     yellow "[*] Packaging kernel.zip..."
 
-    if [ ! -d "${AK3_DIR}" ]; then
-        red "[✗] AnyKernel3 directory not found: ${AK3_DIR}"
-        exit 1
-    fi
+    ensure_ak3
 
     BUILT_IMAGE="${KDIR}/out/arch/arm64/boot/Image"
     if [ ! -f "${BUILT_IMAGE}" ]; then
