@@ -6,6 +6,7 @@
 #   ./build_levion.sh --vendor_dlkm  # only regenerate vendor_dlkm.img (uses existing out/modules)
 #   ./build_levion.sh --image        # only build the kernel Image (no vendor_dlkm, no zip)
 #   ./build_levion.sh -d | --dirty   # skip the clean step, rebuild only what changed (any mode)
+#   ./build_levion.sh -fs erofs      # vendor_dlkm.img as EROFS (-fs ext4 is the default)
 #
 # Expected directory layout (script lives inside the kernel source tree):
 #   <parent>/
@@ -35,17 +36,24 @@ OUT_VDLKM="${PARENT}/vendor_dlkm_new.img"               # generated image — ST
 # --image         : only build the kernel Image
 # --debug         : keep the scratch/staging (generated files left on disk)
 # -d, --dirty     : skip mrproper, keep out/ and rebuild only what changed
+# -fs, --fs TYPE  : vendor_dlkm.img filesystem, ext4 (default) or erofs
 # ──────────────────────────────────────────────────────────────
 
 MODE="all"
 DEBUG=0
 DIRTY=0
+FS_TYPE="ext4"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --vendor_dlkm) MODE="vendor_dlkm"; shift ;;
         --image)       MODE="image";       shift ;;
         --debug)       DEBUG=1;            shift ;;
         -d|--dirty)    DIRTY=1;            shift ;;
+        -fs|--fs)
+            FS_TYPE="${2:-}"
+            [[ "${FS_TYPE}" == "ext4" || "${FS_TYPE}" == "erofs" ]] \
+                || { echo "-fs needs ext4 or erofs, got '${FS_TYPE}'"; exit 1; }
+            shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -321,17 +329,37 @@ if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; th
         fi
     done
 
-    # Build the ext4 image straight to the output (stock is never touched)
+    # Build the image straight to the output (stock is never touched)
     rm -f "${OUT_VDLKM}"
-    dd if=/dev/zero of="${OUT_VDLKM}" bs=1M count=512
-    mke2fs \
-        -O "extent,huge_file" \
-        -T largefile \
-        -L vendor_dlkm \
-        -d "${EXTRACT_DIR}" \
-        "${OUT_VDLKM}"
-    e2fsck -f -y "${OUT_VDLKM}" || true
-    resize2fs -M "${OUT_VDLKM}"
+    if [[ "${FS_TYPE}" == "erofs" ]]; then
+        # SELinux file_contexts — must match stock so modules get vendor_file labels
+        FILE_CONTEXTS="${SCRATCH}/file_contexts"
+        cat <<'EOF' >"${FILE_CONTEXTS}"
+/ u:object_r:vendor_file:s0
+/vendor_dlkm(/.*)? u:object_r:vendor_file:s0
+/vendor_dlkm/etc(/.*)? u:object_r:vendor_configs_file:s0
+EOF
+        mkfs.erofs \
+            --mount-point=/vendor_dlkm \
+            --all-root \
+            --file-contexts="${FILE_CONTEXTS}" \
+            -zlz4 \
+            -b4096 \
+            -T1230768000 \
+            "${OUT_VDLKM}" \
+            "${EXTRACT_DIR}" \
+            || { red "[✗] mkfs.erofs failed"; exit 1; }
+    else
+        dd if=/dev/zero of="${OUT_VDLKM}" bs=1M count=512
+        mke2fs \
+            -O "extent,huge_file" \
+            -T largefile \
+            -L vendor_dlkm \
+            -d "${EXTRACT_DIR}" \
+            "${OUT_VDLKM}"
+        e2fsck -f -y "${OUT_VDLKM}" || true
+        resize2fs -M "${OUT_VDLKM}"
+    fi
 
     # Pad up to the stock partition size if smaller
     ORIG_SIZE=$(stat --format="%s" "${STOCK_IMG}")
@@ -342,9 +370,13 @@ if [[ "${MODE}" == "all" || "${MODE}" == "vendor_dlkm" ]] && modules_enabled; th
         red "[!] WARNING: new image (${NEW_SIZE}B) > stock partition (${ORIG_SIZE}B)!"
     fi
 
-    e2fsck -f -n "${OUT_VDLKM}" && green "    ext4 fsck passed" || { red "[✗] ext4 fsck failed!"; exit 1; }
+    if [[ "${FS_TYPE}" == "erofs" ]]; then
+        fsck.erofs "${OUT_VDLKM}" 2>&1 && green "    EROFS fsck passed" || { red "[✗] EROFS fsck failed!"; exit 1; }
+    else
+        e2fsck -f -n "${OUT_VDLKM}" && green "    ext4 fsck passed" || { red "[✗] ext4 fsck failed!"; exit 1; }
+    fi
 
-    green "[✓] vendor_dlkm.img written → ${OUT_VDLKM} (stock left untouched)"
+    green "[✓] vendor_dlkm.img (${FS_TYPE}) written → ${OUT_VDLKM} (stock left untouched)"
 
 fi
 
