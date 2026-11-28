@@ -5,6 +5,7 @@
 #   ./build_levion.sh                # full build: kernel + vendor_dlkm.img + kernel.zip
 #   ./build_levion.sh --vendor_dlkm  # only regenerate vendor_dlkm.img (uses existing out/modules)
 #   ./build_levion.sh --image        # only build the kernel Image (no vendor_dlkm, no zip)
+#   ./build_levion.sh --obj mm/memory.o   # compile one object (or a folder, e.g. --obj drivers/staging/) and stop
 #   ./build_levion.sh --menuconfig   # edit the defconfig in menuconfig, saved back with savedefconfig
 #   ./build_levion.sh --regen        # rewrite the defconfig through savedefconfig (no edits)
 #   ./build_levion.sh --dtbo         # only rebuild dtbo.img and put it in AnyKernel3 (no clean, no zip)
@@ -38,6 +39,7 @@ OUT_VDLKM="${PARENT}/vendor_dlkm_new.img"               # generated image — ST
 # --vendor_dlkm   : only regenerate vendor_dlkm.img
 # --image         : only build the kernel Image
 # --dtbo          : only rebuild dtbo.img (with AVB footer) into AnyKernel3
+# --obj PATH      : compile one object or folder only (quick compile check), no clean
 # --menuconfig    : menuconfig on the defconfig, then savedefconfig back into it
 # --regen         : savedefconfig back into the defconfig without editing
 # --debug         : keep the scratch/staging (generated files left on disk)
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
         --image)       MODE="image";       shift ;;
         --dtbo)        MODE="dtbo";        shift ;;
         --menuconfig)  MODE="menuconfig";  shift ;;
+        --obj)
+            MODE="obj"; OBJ_TARGET="${2:-}"
+            [ -n "${OBJ_TARGET}" ] || { echo "--obj needs a path, e.g. --obj mm/memory.o"; exit 1; }
+            shift 2 ;;
         --regen)       MODE="regen";       shift ;;
         --debug)       DEBUG=1;            shift ;;
         -d|--dirty)    DIRTY=1;            shift ;;
@@ -249,6 +255,19 @@ modules_enabled() {
     [ -f "${cfg}" ] || return 0
     grep -qx 'CONFIG_MODULES=y' "${cfg}"
 }
+
+# ══════════════════════════════════════════════════════════════
+# SINGLE OBJECT  (--obj PATH), then stop
+# ══════════════════════════════════════════════════════════════
+
+if [[ "${MODE}" == "obj" ]]; then
+    cd "${KDIR}"
+    [ -f out/.config ] || make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki_defconfig
+    yellow "[*] Compiling ${OBJ_TARGET}..."
+    make -j"$(nproc)" "${MAKE_FLAGS[@]}" "${OBJ_TARGET}"
+    green "[✓] ${OBJ_TARGET} compiled in $((SECONDS / 60))m $((SECONDS % 60))s"
+    exit 0
+fi
 
 # ══════════════════════════════════════════════════════════════
 # DEFCONFIG EDIT  (--menuconfig / --regen), then stop
